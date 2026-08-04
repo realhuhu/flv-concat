@@ -61,9 +61,19 @@ runs:
         FFMPEG_SHA256: ${{ inputs.sha256 }}
       run: |
         New-Item -ItemType Directory -Path (Split-Path $env:FFMPEG_ARCHIVE) -Force | Out-Null
-        Invoke-WebRequest `
-          -Uri "https://ffmpeg.org/releases/ffmpeg-$env:FFMPEG_VERSION.tar.gz" `
-          -OutFile $env:FFMPEG_ARCHIVE
+        $sourceUrl = "https://ffmpeg.org/releases/ffmpeg-$env:FFMPEG_VERSION.tar.gz"
+        curl.exe `
+          --fail `
+          --location `
+          --retry 5 `
+          --retry-delay 5 `
+          --retry-all-errors `
+          --connect-timeout 30 `
+          --output $env:FFMPEG_ARCHIVE `
+          $sourceUrl
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to download FFmpeg source after retries (curl exit code $LASTEXITCODE)"
+        }
 
         $actual = (Get-FileHash $env:FFMPEG_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($actual -ne $env:FFMPEG_SHA256) {
