@@ -34,6 +34,14 @@ if(FLVCONCAT_FFMPEG_AOM_STUB)
 endif()
 target_include_directories(flvconcat_media PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(flvconcat_media PUBLIC flvconcat_core FFMPEG::avformat FFMPEG::avcodec FFMPEG::avutil)
+if(WIN32)
+  # Static FFmpeg builds may include Schannel and Media Foundation objects even
+  # when FLVConcat only uses local files. Their Windows SDK imports are private
+  # pkg-config dependencies and therefore need to be stated explicitly.
+  target_link_libraries(flvconcat_media PUBLIC
+    advapi32 bcrypt crypt32 mf mfplat mfuuid ncrypt ole32 psapi
+    secur32 shell32 shlwapi strmiids user32 vfw32 ws2_32)
+endif()
 
 add_executable(flvconcat src/main.cpp)
 target_link_libraries(flvconcat PRIVATE flvconcat_media)
