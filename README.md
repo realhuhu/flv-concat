@@ -1,5 +1,7 @@
 # FLVConcat
 
+![FLVConcat 使用示例](https://typora-1304907527.cos.ap-nanjing.myqcloud.com/example.gif)
+
 [English](README_EN.md) · [最新版本](https://github.com/realhuhu/flv-concat/releases/latest) · [问题反馈](https://github.com/realhuhu/flv-concat/issues)
 
 FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。它直接读取 FLV tag 的原始时间戳，自动处理时间戳回退、32 位回绕、音频重发、整段重复推送和音画共同卡顿，再无损重封装为 MP4。
