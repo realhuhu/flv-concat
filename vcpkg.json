@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "flvconcat",
+  "version-semver": "1.0.0",
+  "builtin-baseline": "f1d4bbc72f183441403ba5107cb19d75a5abc2a2",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avformat"
+      ]
+    }
+  ]
+}

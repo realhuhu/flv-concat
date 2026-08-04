@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache vcpkg packages
+        uses: actions/cache@v6
+        with:
+          path: build/vcpkg_installed
+          key: vcpkg-windows-x64-static-${{ hashFiles('vcpkg.json') }}
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -S . -B build -A x64
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DFLVCONCAT_BUILD_TESTS=ON
+      - name: Build and test
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+          ctest --test-dir build -C Release --output-on-failure
+          .\build\Release\flvconcat.exe --version
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "flvconcat-$env:GITHUB_REF_NAME-windows-x64"
+          $root = Join-Path "dist" $name
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          Copy-Item "build/Release/flvconcat.exe" $root
+          Copy-Item "README.md", "README_EN.md", "LICENSE", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md" $root
+          Compress-Archive -Path $root -DestinationPath "dist/$name.zip"
+          $archive = Resolve-Path "dist/$name.zip"
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Out-File "dist/SHA256SUMS.txt" -Encoding ascii
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: dist
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "FLVConcat $GITHUB_REF_NAME"
+          --generate-notes
+          --verify-tag

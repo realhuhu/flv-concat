@@ -1,0 +1,50 @@
+name: Bug report
+description: Report incorrect output, a crash, or an unsupported recording pattern
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not upload private recordings publicly. Use a synthetic or trimmed sample when possible.
+  - type: input
+    id: version
+    attributes:
+      label: FLVConcat version
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows x64
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and complete output
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Recording source and media details
+      description: Recorder/streaming software, file count, approximate duration, resolution, and codecs.
