@@ -18,21 +18,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Cache vcpkg packages
-        uses: actions/cache@v6
-        with:
-          path: build/vcpkg_installed
-          key: vcpkg-windows-x64-static-${{ hashFiles('vcpkg.json') }}
-          save-always: true
-      - name: Fetch pinned vcpkg baseline
-        shell: pwsh
-        run: git -C "$env:VCPKG_INSTALLATION_ROOT" fetch origin f1d4bbc72f183441403ba5107cb19d75a5abc2a2 --depth=1
+      - name: Build or restore minimal FFmpeg
+        id: ffmpeg
+        uses: ./.github/actions/setup-minimal-ffmpeg
       - name: Configure
         shell: pwsh
         run: >
           cmake -S . -B build -A x64
-          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
-          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          "-DFFMPEG_ROOT=${{ steps.ffmpeg.outputs.root }}"
+          -DFLVCONCAT_FFMPEG_AOM_STUB=ON
           -DFLVCONCAT_BUILD_TESTS=ON
       - name: Build and test
         shell: pwsh
@@ -43,6 +37,13 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
+          $executable = Get-Item "build/Release/flvconcat.exe"
+          $maxExecutableBytes = 4MB
+          if ($executable.Length -gt $maxExecutableBytes) {
+            throw "flvconcat.exe is $($executable.Length) bytes; expected a minimal build no larger than $maxExecutableBytes bytes"
+          }
+          "Windows executable: $($executable.Length) bytes" | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
           $name = "flvconcat-$env:GITHUB_REF_NAME-windows-x64"
           $root = Join-Path "dist" $name
           New-Item -ItemType Directory -Path $root -Force | Out-Null

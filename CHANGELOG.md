@@ -2,6 +2,13 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.0.1] - 2026-08-04
+
+### Fixed
+
+- Build official Windows releases against a reproducible, SHA-256-verified minimal FFmpeg instead of the general-purpose vcpkg FFmpeg port.
+- Reject release executables larger than 4 MiB to prevent accidental package-size regressions.
+
 ## [1.0.0] - 2026-08-04
 
 ### Added
