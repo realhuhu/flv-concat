@@ -1,0 +1,97 @@
+name: Setup minimal FFmpeg
+description: Build and cache the narrowly scoped static FFmpeg used by FLVConcat releases
+
+inputs:
+  version:
+    description: FFmpeg release version
+    required: false
+    default: "7.1.1"
+  sha256:
+    description: SHA-256 of the official FFmpeg source archive
+    required: false
+    default: "9a6e57a446b671012612aaeb9df5126794d5ac8f2015ca220934f99a6a4e0601"
+
+outputs:
+  root:
+    description: Absolute path to the installed FFmpeg tree
+    value: ${{ steps.paths.outputs.root }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve build paths
+      id: paths
+      shell: pwsh
+      run: |
+        $root = Join-Path $env:GITHUB_WORKSPACE "build/ffmpeg-minimal"
+        $archive = Join-Path $env:GITHUB_WORKSPACE "build/ffmpeg-${{ inputs.version }}.tar.gz"
+        $source = Join-Path $env:GITHUB_WORKSPACE "build/ffmpeg-${{ inputs.version }}"
+        "root=$root" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "archive=$archive" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "source=$source" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+    - name: Initialize MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Cache minimal FFmpeg
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: build/ffmpeg-minimal
+        key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-msvc-${{ inputs.version }}-${{ hashFiles('scripts/build-minimal-ffmpeg.sh', '.github/actions/setup-minimal-ffmpeg/action.yml') }}
+
+    - name: Set up MSYS2 build tools
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MSYS
+        update: true
+        install: make diffutils
+        path-type: inherit
+
+    - name: Download and verify FFmpeg source
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      env:
+        FFMPEG_ARCHIVE: ${{ steps.paths.outputs.archive }}
+        FFMPEG_SOURCE: ${{ steps.paths.outputs.source }}
+        FFMPEG_VERSION: ${{ inputs.version }}
+        FFMPEG_SHA256: ${{ inputs.sha256 }}
+      run: |
+        New-Item -ItemType Directory -Path (Split-Path $env:FFMPEG_ARCHIVE) -Force | Out-Null
+        $sourceUrl = "https://ffmpeg.org/releases/ffmpeg-$env:FFMPEG_VERSION.tar.gz"
+        curl.exe `
+          --fail `
+          --location `
+          --retry 5 `
+          --retry-delay 5 `
+          --retry-all-errors `
+          --connect-timeout 30 `
+          --output $env:FFMPEG_ARCHIVE `
+          $sourceUrl
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to download FFmpeg source after retries (curl exit code $LASTEXITCODE)"
+        }
+
+        $actual = (Get-FileHash $env:FFMPEG_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $env:FFMPEG_SHA256) {
+          throw "FFmpeg source checksum mismatch: expected $env:FFMPEG_SHA256, got $actual"
+        }
+
+        if (Test-Path -LiteralPath $env:FFMPEG_SOURCE) {
+          [System.IO.Directory]::Delete($env:FFMPEG_SOURCE, $true)
+        }
+        tar -xf $env:FFMPEG_ARCHIVE -C (Split-Path $env:FFMPEG_ARCHIVE)
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to extract FFmpeg source (tar exit code $LASTEXITCODE)"
+        }
+
+    - name: Build minimal static FFmpeg
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: msys2 {0}
+      env:
+        FFMPEG_ROOT: ${{ steps.paths.outputs.root }}
+        FFMPEG_SOURCE: ${{ steps.paths.outputs.source }}
+      run: bash ./scripts/build-minimal-ffmpeg.sh "$FFMPEG_SOURCE" "$FFMPEG_ROOT"

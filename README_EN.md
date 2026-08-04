@@ -22,6 +22,8 @@ No media is decoded or re-encoded. Processing speed is primarily limited by disk
 
 Download the Windows x64 archive from [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest). The official executable is statically linked and does not require a separate FFmpeg installation.
 
+Official releases build a minimal FFmpeg 7.1.1 from a SHA-256-verified source archive, enabling only the FLV, MP4, H.264/AAC, and local-file components FLVConcat needs. The release workflow rejects executables larger than 4 MiB to catch accidental full-FFmpeg linkage.
+
 Supported inputs are FLV files containing H.264/AVC video and AAC audio. Files in one merge must have identical resolution, codecs, sample rate, channel count, and codec configuration.
 
 ## Usage
@@ -48,7 +50,7 @@ See [docs/algorithm.md](docs/algorithm.md) for the detailed model.
 
 ## Building
 
-You need CMake 3.20+, a C++17 compiler, and FFmpeg development libraries for libavformat, libavcodec, and libavutil. The repository includes a vcpkg manifest for Windows. See the Chinese README above for ready-to-run commands and the CI workflows for canonical builds.
+You need CMake 3.20+, a C++17 compiler, and FFmpeg development libraries for libavformat, libavcodec, and libavutil. The repository includes a vcpkg manifest for convenient Windows development. Official compact binaries use the exact configuration in [scripts/build-minimal-ffmpeg.sh](scripts/build-minimal-ffmpeg.sh), shared by Windows CI and the release workflow. See the Chinese README above for ready-to-run commands.
 
 ## License
 

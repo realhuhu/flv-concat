@@ -22,6 +22,8 @@ FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。�
 
 从 [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest) 下载 Windows x64 压缩包，解压后直接使用。官方包静态链接所需运行库，不需要另外安装 FFmpeg。
 
+官方发布版会从经过 SHA-256 校验的 FFmpeg 7.1.1 源码构建裁剪库，仅启用 FLV、MP4、H.264/AAC 和本地文件所需组件；Release 工作流同时限制 EXE 不得超过 4 MiB，避免误链接完整 FFmpeg。
+
 当前支持输入：
 
 - FLV 容器
@@ -81,6 +83,8 @@ cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/build
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ~~~
+
+vcpkg 方案适合一般开发。官方小体积 Windows 二进制的完整构建配置位于 [scripts/build-minimal-ffmpeg.sh](scripts/build-minimal-ffmpeg.sh)，由 CI 和 Release 共用的本地 Action 自动下载、校验、编译和缓存。
 
 Ubuntu/Debian：
 
