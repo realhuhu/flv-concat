@@ -27,7 +27,7 @@ public:
     Mp4Muxer& operator=(const Mp4Muxer&) = delete;
 
     bool open(const std::filesystem::path& output,
-              const std::filesystem::path& stream_template,
+              const MediaInfo& stream_template,
               const MuxOptions& options,
               std::string& error);
     bool write_file(const ScanResult& scan,

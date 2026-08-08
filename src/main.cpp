@@ -257,7 +257,7 @@ int run(const std::filesystem::path& executable,
     mux_options.video_offset_us = *options.video_offset_ms * 1000;
     mux_options.faststart = options.faststart;
     flvconcat::Mp4Muxer muxer;
-    if (!muxer.open(temporary, options.inputs.front(), mux_options, error)) {
+    if (!muxer.open(temporary, media.front(), mux_options, error)) {
         remove_temporary(temporary);
         std::cerr << "error: " << error << '\n';
         return 1;

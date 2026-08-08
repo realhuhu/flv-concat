@@ -2,6 +2,21 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.0.3] - 2026-08-08
+
+### Added
+
+- Add H.265/HEVC support for legacy FLV `codec_id=12` recordings.
+- Parse H.264 and H.265 sequence headers directly, including SPS dimensions and
+  semantic VPS/SPS/PPS compatibility checks.
+- Split codec-specific parsing into `src/codecs/` so future formats can be
+  registered without changing the timestamp and muxing pipeline.
+
+### Fixed
+
+- Avoid FFmpeg's unsupported-codec path for old HEVC FLV files by probing hvcC
+  and AAC sequence headers directly from FLV tags.
+
 ## [1.0.2] - 2026-08-08
 
 ### Fixed

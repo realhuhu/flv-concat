@@ -15,7 +15,7 @@ FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。�
 - 删除 run 内时间戳不递增的 AAC 重发包。
 - 通过“时间戳 + 编码内容指纹”识别整段重复推送，避免误删有效内容。
 - 保留音画共同卡顿产生的真实空隙，避免后半段音频逐渐提前。
-- 保留 H.264 composition time（PTS - DTS）并支持额外音画偏移。
+- 保留 H.264/H.265 composition time（PTS - DTS）并支持额外音画偏移。
 - 多个 FLV 按文件名排序后快速合并，也可以保留命令行顺序。
 - 输出使用临时文件；全部完成后才替换目标，失败不会留下半成品。
 - Windows 支持把一个或多个 FLV 直接拖到 flvconcat.exe 上。
@@ -24,14 +24,14 @@ FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。�
 
 从 [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest) 下载 Windows x64 压缩包，解压后直接使用。官方包静态链接所需运行库，不需要另外安装 FFmpeg。
 
-官方发布版会从经过 SHA-256 校验的 FFmpeg 7.1.1 源码构建裁剪库，仅启用 FLV、MP4、H.264/AAC 和本地文件所需组件；Release 工作流同时限制 EXE 不得超过 4 MiB，避免误链接完整 FFmpeg。
+官方发布版会从经过 SHA-256 校验的 FFmpeg 7.1.1 源码构建裁剪库，仅启用 FLV、MP4、H.264/H.265/AAC 和本地文件所需组件；Release 工作流同时限制 EXE 不得超过 4 MiB，避免误链接完整 FFmpeg。
 
 当前支持输入：
 
 - FLV 容器
-- H.264/AVC 视频
+- H.264/AVC 或 H.265/HEVC 视频（包括旧式 FLV `codec_id=12`）
 - AAC 音频
-- 多文件必须具有相同的分辨率、编码、采样率和声道数。H.264 会比较 NAL 长度、SPS 和 PPS；AAC 会比较对象类型、采样率、声道布局和帧长。仅 avcC/ASC 的可选扩展字节不同不会阻止合并。
+- 多文件必须具有相同的分辨率、编码、采样率和声道数。H.264 比较 NAL 长度、SPS 和 PPS；H.265 比较 NAL 长度、VPS、SPS 和 PPS；AAC 比较对象类型、采样率、声道布局和帧长。仅 avcC/hvcC/ASC 的可选扩展字节不同不会阻止合并。
 
 其他编码组合会明确拒绝，不会尝试有损转码。
 
@@ -69,10 +69,12 @@ FLVConcat 使用两遍处理：
 
 1. 第一遍直接扫描 FLV 字节，建立包索引，解开时间戳回绕，划分音频/视频 run，并计算轻量内容指纹。
 2. 按时间范围配对音视频 run，识别重复 run，规划连续输出时间轴。
-3. 第二遍按索引读取 H.264/AAC 包，过滤音频重发，保留原始 composition time 和真实空隙。
+3. 第二遍按索引读取 H.264/H.265/AAC 包，过滤音频重发，保留原始 composition time 和真实空隙。
 4. 通过 libavformat 写入 MP4，全程不重新编码。
 
 详细设计见 [docs/algorithm.md](docs/algorithm.md)。
+
+编码格式实现位于 `src/codecs/`，注册表只负责把 FLV codec/sound-format 映射到格式处理器；FLV 探测位于 `src/flv/`，因此新增编码格式时无需改动时间轴算法。
 
 ## 从源码构建
 
