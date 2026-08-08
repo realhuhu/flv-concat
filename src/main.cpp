@@ -45,12 +45,117 @@ std::string lower_ascii(std::string value) {
     return value;
 }
 
+bool has_wildcard(const std::filesystem::path& path) {
+    const auto text = path.u8string();
+    return text.find('*') != std::string::npos || text.find('?') != std::string::npos;
+}
+
+bool wildcard_character_equal(char left, char right) {
+#ifdef _WIN32
+    return static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(left))) ==
+           static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(right)));
+#else
+    return left == right;
+#endif
+}
+
+bool wildcard_match(const std::string& value, const std::string& pattern) {
+    std::size_t value_index = 0;
+    std::size_t pattern_index = 0;
+    std::size_t star_index = std::string::npos;
+    std::size_t star_match = 0;
+
+    while (value_index < value.size()) {
+        if (pattern_index < pattern.size() &&
+            (pattern[pattern_index] == '?' ||
+             wildcard_character_equal(pattern[pattern_index], value[value_index]))) {
+            ++pattern_index;
+            ++value_index;
+        } else if (pattern_index < pattern.size() && pattern[pattern_index] == '*') {
+            star_index = pattern_index++;
+            star_match = value_index;
+        } else if (star_index != std::string::npos) {
+            pattern_index = star_index + 1;
+            value_index = ++star_match;
+        } else {
+            return false;
+        }
+    }
+
+    while (pattern_index < pattern.size() && pattern[pattern_index] == '*') {
+        ++pattern_index;
+    }
+    return pattern_index == pattern.size();
+}
+
+bool expand_input_pattern(const std::filesystem::path& pattern,
+                          std::vector<std::filesystem::path>& expanded,
+                          std::string& error) {
+    if (!has_wildcard(pattern)) {
+        expanded.push_back(pattern);
+        return true;
+    }
+
+    const auto directory = pattern.parent_path().empty() ? std::filesystem::path(".")
+                                                          : pattern.parent_path();
+    const auto filename_pattern = pattern.filename().u8string();
+    if (has_wildcard(directory)) {
+        error = "wildcards are supported in the input filename, not its directory: " +
+                pattern.u8string();
+        return false;
+    }
+
+    std::error_code iterator_error;
+    std::vector<std::filesystem::path> matches;
+    for (std::filesystem::directory_iterator iterator(directory, iterator_error), end;
+         iterator != end;
+         iterator.increment(iterator_error)) {
+        if (iterator_error) {
+            break;
+        }
+        std::error_code status_error;
+        if (!std::filesystem::is_regular_file(iterator->path(), status_error) || status_error) {
+            continue;
+        }
+        if (wildcard_match(iterator->path().filename().u8string(), filename_pattern)) {
+            matches.push_back(iterator->path());
+        }
+    }
+    if (iterator_error) {
+        error = "cannot enumerate input pattern " + pattern.u8string() + ": " +
+                iterator_error.message();
+        return false;
+    }
+    if (matches.empty()) {
+        error = "input pattern matched no files: " + pattern.u8string();
+        return false;
+    }
+
+    std::stable_sort(matches.begin(), matches.end(), [](const auto& left, const auto& right) {
+        return lower_ascii(left.filename().u8string()) <
+               lower_ascii(right.filename().u8string());
+    });
+    expanded.insert(expanded.end(), matches.begin(), matches.end());
+    return true;
+}
+
+bool expand_input_patterns(std::vector<std::filesystem::path>& inputs, std::string& error) {
+    std::vector<std::filesystem::path> expanded;
+    for (const auto& input : inputs) {
+        if (!expand_input_pattern(input, expanded, error)) {
+            return false;
+        }
+    }
+    inputs.swap(expanded);
+    return true;
+}
+
 void print_help(std::ostream& output) {
     output
         << "FLVConcat " << FLVCONCAT_VERSION << "\n"
         << "Repair live-recording FLV timestamps and losslessly merge to MP4.\n\n"
         << "Usage:\n"
-        << "  flvconcat [options] <input.flv> [more.flv ...]\n\n"
+        << "  flvconcat [options] <input.flv|pattern> [more.flv ...]\n\n"
         << "Options:\n"
         << "  -o, --output <file>          Output MP4 path\n"
         << "      --av-offset <ms>         Add to video PTS (positive = video later)\n"
@@ -61,6 +166,7 @@ void print_help(std::ostream& output) {
         << "      --no-faststart           Do not move MP4 metadata to the beginning\n"
         << "  -h, --help                   Show this help\n"
         << "  -V, --version                Show version\n\n"
+        << "Input filenames support * and ? wildcards (for example, *.flv).\n"
         << "Windows: you can also drag one or more .flv files onto flvconcat.exe.\n";
 }
 
@@ -187,6 +293,12 @@ int run(const std::filesystem::path& executable,
     if (parse_result == ParseResult::version) {
         std::cout << "flvconcat " << FLVCONCAT_VERSION << '\n';
         return 0;
+    }
+
+    std::string expansion_error;
+    if (!expand_input_patterns(options.inputs, expansion_error)) {
+        std::cerr << "error: " << expansion_error << '\n';
+        return 2;
     }
     if (options.inputs.empty()) {
         print_help(std::cout);

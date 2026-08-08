@@ -50,26 +50,65 @@ jobs:
           Copy-Item "build/Release/flvconcat.exe" $root
           Copy-Item "README.md", "README_EN.md", "LICENSE", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md" $root
           Compress-Archive -Path $root -DestinationPath "dist/$name.zip"
-          $archive = Resolve-Path "dist/$name.zip"
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $name.zip" | Out-File "dist/SHA256SUMS.txt" -Encoding ascii
       - uses: actions/upload-artifact@v7
         with:
-          name: release-assets
+          name: release-assets-windows
           path: |
             dist/*.zip
-            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  linux:
+    name: Build Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install FFmpeg development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ pkg-config libavformat-dev libavcodec-dev libavutil-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DFLVCONCAT_BUILD_TESTS=ON
+      - name: Build and test
+        run: |
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+          ./build/flvconcat --version
+      - name: Package
+        run: |
+          executable=build/flvconcat
+          test -x "$executable"
+          name="flvconcat-${GITHUB_REF_NAME}-linux-x64"
+          root="dist/$name"
+          mkdir -p "$root"
+          cp "$executable" README.md README_EN.md LICENSE CHANGELOG.md THIRD_PARTY_NOTICES.md "$root/"
+          tar -czf "dist/$name.tar.gz" -C dist "$name"
+          size=$(stat -c '%s' "$executable")
+          echo "Linux executable: ${size} bytes" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-linux
+          path: dist/*.tar.gz
           if-no-files-found: error
 
   publish:
     name: Publish GitHub release
-    needs: windows
+    needs: [windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: release-assets
+          name: release-assets-windows
           path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets-linux
+          path: dist
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum *.zip *.tar.gz > SHA256SUMS.txt
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

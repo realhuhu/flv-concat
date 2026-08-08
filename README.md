@@ -17,12 +17,13 @@ FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。�
 - 保留音画共同卡顿产生的真实空隙，避免后半段音频逐渐提前。
 - 保留 H.264/H.265 composition time（PTS - DTS）并支持额外音画偏移。
 - 多个 FLV 按文件名排序后快速合并，也可以保留命令行顺序。
+- 支持 `*.flv`、`part-?.flv` 等输入文件名通配符。
 - 输出使用临时文件；全部完成后才替换目标，失败不会留下半成品。
 - Windows 支持把一个或多个 FLV 直接拖到 flvconcat.exe 上。
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest) 下载 Windows x64 压缩包，解压后直接使用。官方包静态链接所需运行库，不需要另外安装 FFmpeg。
+从 [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest) 下载 Windows x64 压缩包或 Linux x64 压缩包。Windows 官方包静态链接所需运行库，不需要另外安装 FFmpeg；Linux 包使用系统 FFmpeg 运行库，Ubuntu/Debian 可安装 `libavformat`、`libavcodec` 和 `libavutil` 运行库。
 
 官方发布版会从经过 SHA-256 校验的 FFmpeg 7.1.1 源码构建裁剪库，仅启用 FLV、MP4、H.264/H.265/AAC 和本地文件所需组件；Release 工作流同时限制 EXE 不得超过 4 MiB，避免误链接完整 FFmpeg。
 
@@ -43,6 +44,7 @@ FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。�
 
 ~~~powershell
 flvconcat.exe "01.flv" "02.flv"
+flvconcat.exe "recordings\*.flv"
 flvconcat.exe -o "recording.mp4" "01.flv" "02.flv"
 flvconcat.exe --keep-order --overwrite -o "recording.mp4" "part-b.flv" "part-a.flv"
 ~~~
@@ -98,6 +100,8 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ~~~
+
+Linux Release 压缩包为 x64 构建，运行时需要发行版提供的 FFmpeg 动态库。
 
 ## 限制与安全
 

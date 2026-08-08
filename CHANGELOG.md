@@ -2,6 +2,17 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.1.3] - 2026-08-08
+
+### Added
+
+- Expand `*` and `?` input filename patterns when the shell passes them through.
+- Publish a Linux x64 release archive alongside the Windows build.
+
+### Changed
+
+- Write HEVC MP4 video streams with the `hvc1` sample-entry tag.
+
 ## [1.1.2] - 2026-08-08
 
 ### Fixed

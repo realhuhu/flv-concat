@@ -15,12 +15,13 @@ No media is decoded or re-encoded. Processing speed is primarily limited by disk
 - Preserves real gaps caused by shared audio/video stalls, preventing cumulative A/V drift.
 - Preserves H.264/H.265 composition time and supports an additional presentation offset.
 - Sorts multiple inputs by filename, with an option to keep command-line order.
+- Expands `*.flv` and `part-?.flv` input filename patterns when the shell passes them through.
 - Writes to a temporary output and only moves it into place after successful finalization.
 - Supports drag-and-drop on Windows.
 
 ## Download
 
-Download the Windows x64 archive from [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest). The official executable is statically linked and does not require a separate FFmpeg installation.
+Download the Windows x64 or Linux x64 archive from [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest). The Windows executable is statically linked and does not require a separate FFmpeg installation; the Linux build uses the distribution's FFmpeg shared libraries.
 
 Official releases build a minimal FFmpeg 7.1.1 from a SHA-256-verified source archive, enabling only the FLV, MP4, H.264/H.265/AAC, and local-file components FLVConcat needs. The release workflow rejects executables larger than 4 MiB to catch accidental full-FFmpeg linkage.
 
@@ -29,13 +30,14 @@ Supported inputs are FLV files containing H.264/AVC or H.265/HEVC video and AAC 
 ## Usage
 
 ~~~text
-flvconcat [options] <input.flv> [more.flv ...]
+flvconcat [options] <input.flv|pattern> [more.flv ...]
 ~~~
 
 Examples:
 
 ~~~powershell
 flvconcat.exe "01.flv" "02.flv"
+flvconcat.exe "recordings\*.flv"
 flvconcat.exe -o "recording.mp4" "01.flv" "02.flv"
 flvconcat.exe --keep-order --overwrite -o "recording.mp4" "part-b.flv" "part-a.flv"
 ~~~

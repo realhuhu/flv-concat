@@ -24,6 +24,11 @@ namespace {
 
 constexpr AVRational kMicroseconds = {1, 1'000'000};
 
+constexpr std::uint32_t kHvc1Tag = static_cast<std::uint32_t>('h') |
+                                   (static_cast<std::uint32_t>('v') << 8U) |
+                                   (static_cast<std::uint32_t>('c') << 16U) |
+                                   (static_cast<std::uint32_t>('1') << 24U);
+
 std::string utf8_path(const std::filesystem::path& path) {
     return path.u8string();
 }
@@ -105,7 +110,8 @@ public:
             return false;
         }
 
-        video_parameters->codec_tag = 0;
+        video_parameters->codec_tag =
+            template_media.video_codec == AV_CODEC_ID_HEVC ? kHvc1Tag : 0;
         audio_parameters->codec_tag = 0;
         video_stream->time_base = AVRational{1, 1000};
         sample_rate = audio_parameters->sample_rate;
@@ -115,7 +121,7 @@ public:
             return false;
         }
         audio_stream->time_base = AVRational{1, sample_rate};
-        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.1.2", 0);
+        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.1.3", 0);
 
         result = avio_open(&context->pb, output_name.c_str(), AVIO_FLAG_WRITE);
         if (result < 0) {
