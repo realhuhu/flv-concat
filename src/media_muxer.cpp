@@ -115,7 +115,7 @@ public:
             return false;
         }
         audio_stream->time_base = AVRational{1, sample_rate};
-        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.1.1", 0);
+        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.1.2", 0);
 
         result = avio_open(&context->pb, output_name.c_str(), AVIO_FLAG_WRITE);
         if (result < 0) {
@@ -209,6 +209,10 @@ public:
 
         bool success = true;
         bool saw_video = false;
+        // A decoder that seeks into the middle of a segment does not replay the
+        // segment's first keyframe. Repeat the compatible in-band configuration
+        // at every keyframe when the source hvcC differs from the MP4 template.
+        // This keeps both sequential playback and random access decodable.
         bool configuration_injected = !configuration_update_required;
         for (const auto& pair : plan.pairs) {
             if (pair.drop) {
@@ -268,7 +272,7 @@ public:
 
                 if (take_video) {
                     saw_video = true;
-                    if (!configuration_injected && indexed->keyframe) {
+                    if (configuration_update_required && indexed->keyframe) {
                         if (!video_descriptor->prepend_configuration(
                                 source_media.video_config, payload, error)) {
                             success = false;

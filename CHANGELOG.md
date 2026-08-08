@@ -2,6 +2,14 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.1.2] - 2026-08-08
+
+### Fixed
+
+- Repeat compatible H.265 VPS/SPS/PPS before every keyframe in a segment whose
+  configuration differs from the MP4 template, so random seeking can initialize
+  the decoder without replaying the segment's first keyframe.
+
 ## [1.1.1] - 2026-08-08
 
 ### Added
