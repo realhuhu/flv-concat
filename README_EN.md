@@ -13,7 +13,7 @@ No media is decoded or re-encoded. Processing speed is primarily limited by disk
 - Removes non-increasing AAC packets resent inside a run.
 - Detects duplicated publishing runs using both timestamps and encoded-content fingerprints.
 - Preserves real gaps caused by shared audio/video stalls, preventing cumulative A/V drift.
-- Preserves H.264 composition time and supports an additional presentation offset.
+- Preserves H.264/H.265 composition time and supports an additional presentation offset.
 - Sorts multiple inputs by filename, with an option to keep command-line order.
 - Writes to a temporary output and only moves it into place after successful finalization.
 - Supports drag-and-drop on Windows.
@@ -22,9 +22,9 @@ No media is decoded or re-encoded. Processing speed is primarily limited by disk
 
 Download the Windows x64 archive from [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest). The official executable is statically linked and does not require a separate FFmpeg installation.
 
-Official releases build a minimal FFmpeg 7.1.1 from a SHA-256-verified source archive, enabling only the FLV, MP4, H.264/AAC, and local-file components FLVConcat needs. The release workflow rejects executables larger than 4 MiB to catch accidental full-FFmpeg linkage.
+Official releases build a minimal FFmpeg 7.1.1 from a SHA-256-verified source archive, enabling only the FLV, MP4, H.264/H.265/AAC, and local-file components FLVConcat needs. The release workflow rejects executables larger than 4 MiB to catch accidental full-FFmpeg linkage.
 
-Supported inputs are FLV files containing H.264/AVC video and AAC audio. Files in one merge must have identical resolution, codecs, sample rate, and channel count. H.264 compatibility compares NAL length, SPS, and PPS; AAC compatibility compares object type, sample rate, channel layout, and frame length. Differences only in optional avcC/ASC extension bytes do not block a merge.
+Supported inputs are FLV files containing H.264/AVC or H.265/HEVC video and AAC audio. This includes legacy FLV `codec_id=12` HEVC recordings. Files in one merge must have identical resolution, codecs, sample rate, and channel count. H.264 compatibility compares NAL length, SPS, and PPS; H.265 compatibility compares NAL length, VPS, SPS, and PPS; AAC compatibility compares object type, sample rate, channel layout, and frame length. Differences only in optional avcC/hvcC/ASC extension bytes do not block a merge.
 
 ## Usage
 
@@ -44,7 +44,7 @@ Run \`flvconcat --help\` for every option. A plain integer in \`avoffset.txt\`, 
 
 ## How it works
 
-FLVConcat performs two passes. The first pass indexes raw FLV media tags, unwraps timestamps, divides streams into runs, and computes lightweight packet fingerprints. It then pairs audio/video runs, removes verified duplicated runs, and plans a continuous output timeline. The second pass reads encoded H.264/AAC payloads by index, drops resent audio, preserves composition offsets and real recording gaps, and writes MP4 through libavformat.
+FLVConcat performs two passes. The first pass indexes raw FLV media tags, unwraps timestamps, divides streams into runs, and computes lightweight packet fingerprints. It then pairs audio/video runs, removes verified duplicated runs, and plans a continuous output timeline. The second pass reads encoded H.264/H.265/AAC payloads by index, drops resent audio, preserves composition offsets and real recording gaps, and writes MP4 through libavformat. Sequence-header probing is codec-specific and lives under `src/codecs/`, so future formats can be added without changing the timeline pipeline.
 
 See [docs/algorithm.md](docs/algorithm.md) for the detailed model.
 

@@ -9,7 +9,9 @@
 
 ## 扫描与回绕
 
-扫描器不使用 FFmpeg 解复用，因为解复用器可能在应用看到时间戳前已经进行溢出修正。它直接读取 11 字节 FLV tag header 和 AVC/AAC media header。
+扫描器不使用 FFmpeg 解复用，因为解复用器可能在应用看到时间戳前已经进行溢出修正。它直接读取 11 字节 FLV tag header 和 H.264/H.265/AAC media header。媒体探测还会直接读取视频 avcC/hvcC 和音频 ASC sequence header；这使旧式 FLV `codec_id=12` 的 HEVC 不依赖 FFmpeg 的 FLV 解码器注册。
+
+编码格式处理器位于 `src/codecs/`，由注册表把 FLV codec id 映射到 H.264、H.265 或其他格式。处理器负责 sequence header、SPS/VPS/PPS 尺寸解析和语义兼容检查；扫描器、时间轴和封装器只处理统一的包模型。
 
 对每条流分别维护最近时间戳和 32 位回绕基数。接近 \`2^32\` 边界的低值恢复被识别为回绕；其他超过 \`run-gap\` 的向后跳变被视为新 run。小范围乱序保留在原 run 中，后续只对音频执行重发过滤。
 

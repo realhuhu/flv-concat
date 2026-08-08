@@ -1,5 +1,7 @@
 #include "flvconcat/scanner.hpp"
 
+#include "flvconcat/codecs/registry.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -158,7 +160,9 @@ bool scan_flv(const std::filesystem::path& path,
             if (kind == StreamKind::video) {
                 const int codec = media_header[0] & 0x0F;
                 keyframe = (media_header[0] >> 4) == 1;
-                if (codec == 7) {
+                if (!codecs::video_codec_for_flv(codec)) {
+                    media_packet = false;
+                } else {
                     if (data_size < 5) {
                         media_packet = false;
                     } else {
@@ -174,7 +178,9 @@ bool scan_flv(const std::filesystem::path& path,
                 }
             } else {
                 const int sound_format = media_header[0] >> 4;
-                if (sound_format == 10) {
+                if (!codecs::audio_codec_for_flv(sound_format)) {
+                    media_packet = false;
+                } else {
                     if (data_size < 2) {
                         media_packet = false;
                     } else {

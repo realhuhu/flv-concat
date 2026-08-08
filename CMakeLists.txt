@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   FLVConcat
-  VERSION 1.0.2
+  VERSION 1.0.3
   DESCRIPTION "Repair broken live-recording FLV timestamps and losslessly merge them into MP4"
   LANGUAGES CXX)
 
@@ -18,6 +18,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+find_package(FFMPEG REQUIRED COMPONENTS avformat avcodec avutil)
+
+add_library(flvconcat_codecs
+  src/codecs/aac.cpp
+  src/codecs/h264.cpp
+  src/codecs/hevc.cpp
+  src/codecs/registry.cpp)
+target_include_directories(flvconcat_codecs
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(flvconcat_codecs PRIVATE FFMPEG::avcodec)
+
 add_library(flvconcat_core
   src/flv_scanner.cpp
   src/timeline.cpp)
@@ -25,10 +40,12 @@ target_include_directories(flvconcat_core
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_link_libraries(flvconcat_core PUBLIC flvconcat_codecs)
 
-find_package(FFMPEG REQUIRED COMPONENTS avformat avcodec avutil)
-
-add_library(flvconcat_media src/media.cpp)
+add_library(flvconcat_media
+  src/flv/probe.cpp
+  src/media.cpp
+  src/media_muxer.cpp)
 if(FLVCONCAT_FFMPEG_AOM_STUB)
   target_sources(flvconcat_media PRIVATE src/ffmpeg_aom_stub.cpp)
 endif()
@@ -48,13 +65,16 @@ target_link_libraries(flvconcat PRIVATE flvconcat_media)
 target_compile_definitions(flvconcat PRIVATE FLVCONCAT_VERSION="${PROJECT_VERSION}")
 
 if(MSVC)
+  target_compile_options(flvconcat_codecs PRIVATE /W4 /permissive- /utf-8)
   target_compile_options(flvconcat_core PRIVATE /W4 /permissive- /utf-8)
   target_compile_options(flvconcat_media PRIVATE /W4 /permissive- /utf-8)
   target_compile_options(flvconcat PRIVATE /W4 /permissive- /utf-8)
+  set_property(TARGET flvconcat_codecs PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   set_property(TARGET flvconcat PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   set_property(TARGET flvconcat_core PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   set_property(TARGET flvconcat_media PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
+  target_compile_options(flvconcat_codecs PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(flvconcat_core PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(flvconcat_media PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(flvconcat PRIVATE -Wall -Wextra -Wpedantic)
