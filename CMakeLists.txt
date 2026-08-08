@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   FLVConcat
-  VERSION 1.0.1
+  VERSION 1.0.2
   DESCRIPTION "Repair broken live-recording FLV timestamps and losslessly merge them into MP4"
   LANGUAGES CXX)
 
@@ -62,7 +62,7 @@ endif()
 
 if(FLVCONCAT_BUILD_TESTS)
   add_executable(flvconcat_tests tests/test_core.cpp)
-  target_link_libraries(flvconcat_tests PRIVATE flvconcat_core)
+  target_link_libraries(flvconcat_tests PRIVATE flvconcat_media)
   if(MSVC)
     target_compile_options(flvconcat_tests PRIVATE /W4 /permissive- /utf-8)
     set_property(TARGET flvconcat_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

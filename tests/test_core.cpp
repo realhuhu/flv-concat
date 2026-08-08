@@ -1,3 +1,4 @@
+#include "flvconcat/media.hpp"
 #include "flvconcat/scanner.hpp"
 #include "flvconcat/timeline.hpp"
 
@@ -155,12 +156,62 @@ void test_timestamp_wrap_is_not_a_new_run() {
     std::filesystem::remove(path, ignored);
 }
 
+flvconcat::MediaInfo make_compatible_media_info() {
+    flvconcat::MediaInfo info;
+    info.width = 2560;
+    info.height = 1440;
+    info.video_codec = 27; // AV_CODEC_ID_H264
+    info.audio_codec = 86018; // AV_CODEC_ID_AAC
+    info.sample_rate = 48'000;
+    info.audio_channels = 2;
+    info.video_config = {
+        0x01, 0x64, 0x00, 0x33, 0xFF, 0xE1, 0x00, 0x1C,
+        0x67, 0x64, 0x00, 0x33, 0xAC, 0xEC, 0x02, 0x80,
+        0x0B, 0x5B, 0x01, 0x6A, 0x02, 0x02, 0x02, 0x80,
+        0x00, 0x00, 0x03, 0x00, 0x80, 0x00, 0x00, 0x3C,
+        0x47, 0x8C, 0x18, 0x9C,
+        0x01, 0x00, 0x04, 0x68, 0xEF, 0xBC, 0xB0,
+        0xFD, 0xF8, 0xF8, 0x00};
+    info.audio_config = {0x11, 0x90, 0x56, 0xE5, 0x00};
+    return info;
+}
+
+void test_semantic_codec_configuration_compatibility() {
+    const auto first = make_compatible_media_info();
+    auto second = first;
+
+    // These are the configuration-record differences found in the two supplied
+    // 20260730 FLVs. Their H.264 SPS/PPS are identical. The first avcC record
+    // signals 4:2:0, while the second's optional high-profile extension says
+    // monochrome despite the actual stream decoding as yuv420p. The AAC configs
+    // differ only by an optional "SBR not present" sync extension.
+    second.video_config[43] = 0xFC;
+    second.audio_config = {0x11, 0x90};
+
+    std::string reason;
+    check(flvconcat::media_compatible(first, second, reason),
+          "semantically identical avcC/ASC configurations are accepted: " + reason);
+
+    auto different_pps = second;
+    different_pps.video_config[42] ^= 0x01;
+    check(!flvconcat::media_compatible(first, different_pps, reason) &&
+              reason == "H.264 SPS/PPS or NAL length differs",
+          "changed H.264 PPS remains incompatible");
+
+    auto different_aac = second;
+    different_aac.audio_config = {0x12, 0x10}; // AAC-LC, 44.1 kHz, stereo
+    check(!flvconcat::media_compatible(first, different_aac, reason) &&
+              reason == "AAC object type, sample rate, channel layout, or frame length differs",
+          "changed AAC AudioSpecificConfig remains incompatible");
+}
+
 } // namespace
 
 int main() {
     test_runs_pairing_and_duplicate_content();
     test_timestamp_match_without_content_match_is_kept();
     test_timestamp_wrap_is_not_a_new_run();
+    test_semantic_codec_configuration_compatibility();
     if (failures == 0) {
         std::cout << "All core tests passed.\n";
     }

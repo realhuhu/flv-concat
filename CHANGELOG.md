@@ -2,6 +2,14 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.0.2] - 2026-08-08
+
+### Fixed
+
+- Compare H.264 configuration semantically through NAL length, SPS, and PPS instead of hashing the whole AVC configuration record.
+- Compare AAC AudioSpecificConfig semantics and ignore optional metadata-only extensions.
+- Accept compatible FLV recordings that differ only in malformed or optional avcC/ASC extension bytes, while still rejecting real decoder-configuration changes.
+
 ## [1.0.1] - 2026-08-04
 
 ### Fixed
