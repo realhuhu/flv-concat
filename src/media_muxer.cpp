@@ -1,5 +1,7 @@
 #include "flvconcat/media.hpp"
 
+#include "flvconcat/codecs/registry.hpp"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -61,6 +63,7 @@ public:
               const MuxOptions& requested_options,
               std::string& error) {
         options = requested_options;
+        template_media_info = template_media;
         const auto output_name = utf8_path(output);
         int result = avformat_alloc_output_context2(&context, nullptr, "mp4", output_name.c_str());
         if (result < 0 || !context) {
@@ -112,7 +115,7 @@ public:
             return false;
         }
         audio_stream->time_base = AVRational{1, sample_rate};
-        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.1.0", 0);
+        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.2.0", 0);
 
         result = avio_open(&context->pb, output_name.c_str(), AVIO_FLAG_WRITE);
         if (result < 0) {
@@ -138,9 +141,30 @@ public:
         return true;
     }
 
-    bool write_file(const ScanResult& scan, const FilePlan& plan, std::string& error) {
+    bool write_file(const ScanResult& scan,
+                    const FilePlan& plan,
+                    const MediaInfo& source_media,
+                    std::string& error) {
         if (!header_written) {
             error = "output muxer is not open";
+            return false;
+        }
+
+        const auto* video_descriptor = codecs::video_codec(source_media.video_codec);
+        std::string compatibility_reason;
+        if (!media_compatible(template_media_info, source_media, compatibility_reason)) {
+            error = "source media is not compatible: " + compatibility_reason;
+            return false;
+        }
+
+        const bool configuration_update_required =
+            video_descriptor && video_descriptor->configuration_requires_inband_update
+                ? video_descriptor->configuration_requires_inband_update(
+                      template_media_info.video_config,
+                      source_media.video_config)
+                : false;
+        if (configuration_update_required && !video_descriptor->prepend_configuration) {
+            error = "video configuration differs and cannot be adjusted without re-encoding";
             return false;
         }
 
@@ -151,6 +175,22 @@ public:
                 video_packets[packet.run].push_back(&packet);
             } else if (packet.stream == StreamKind::audio && packet.run < audio_packets.size()) {
                 audio_packets[packet.run].push_back(&packet);
+            }
+        }
+
+        if (configuration_update_required) {
+            for (const auto& pair : plan.pairs) {
+                if (pair.drop || pair.video_run < 0) {
+                    continue;
+                }
+                const auto& first_video =
+                    video_packets[static_cast<std::size_t>(pair.video_run)];
+                if (!first_video.empty() && !first_video.front()->keyframe) {
+                    error = "cannot adjust H.265 configuration without a keyframe at the "
+                            "start of the input segment";
+                    return false;
+                }
+                break;
             }
         }
 
@@ -168,6 +208,8 @@ public:
             scan.audio_runs.size(), std::numeric_limits<std::int64_t>::min());
 
         bool success = true;
+        bool saw_video = false;
+        bool configuration_injected = !configuration_update_required;
         for (const auto& pair : plan.pairs) {
             if (pair.drop) {
                 continue;
@@ -215,20 +257,35 @@ public:
                                             indexed->flv_media_header_size;
                 input.clear();
                 input.seekg(static_cast<std::streamoff>(payload_offset), std::ios::beg);
-                const int allocation_result = av_new_packet(packet, indexed->payload_size);
+                std::vector<std::uint8_t> payload(indexed->payload_size);
+                input.read(reinterpret_cast<char*>(payload.data()),
+                           static_cast<std::streamsize>(payload.size()));
+                if (input.gcount() != static_cast<std::streamsize>(payload.size())) {
+                    error = "cannot read indexed packet from " + utf8_path(scan.path);
+                    success = false;
+                    break;
+                }
+
+                if (take_video) {
+                    saw_video = true;
+                    if (!configuration_injected && indexed->keyframe) {
+                        if (!video_descriptor->prepend_configuration(
+                                source_media.video_config, payload, error)) {
+                            success = false;
+                            break;
+                        }
+                        configuration_injected = true;
+                    }
+                }
+
+                const int allocation_result =
+                    av_new_packet(packet, static_cast<int>(payload.size()));
                 if (allocation_result < 0) {
                     error = "cannot allocate packet payload: " + ffmpeg_error(allocation_result);
                     success = false;
                     break;
                 }
-                input.read(reinterpret_cast<char*>(packet->data),
-                           static_cast<std::streamsize>(indexed->payload_size));
-                if (input.gcount() != static_cast<std::streamsize>(indexed->payload_size)) {
-                    error = "cannot read indexed packet from " + utf8_path(scan.path);
-                    av_packet_unref(packet);
-                    success = false;
-                    break;
-                }
+                std::memcpy(packet->data, payload.data(), payload.size());
 
                 std::int64_t duration_us;
                 std::int32_t composition_ms = 0;
@@ -280,6 +337,10 @@ public:
                 break;
             }
         }
+        if (success && configuration_update_required && saw_video && !configuration_injected) {
+            error = "cannot adjust H.265 configuration without a video keyframe";
+            success = false;
+        }
         av_packet_free(&packet);
         stats_value.duplicate_runs_dropped += plan.duplicate_runs_dropped;
         stats_value.duration_us = std::max(stats_value.duration_us, plan.end_us);
@@ -327,6 +388,7 @@ public:
     AVRational audio_time_base{};
     int sample_rate = 0;
     bool header_written = false;
+    MediaInfo template_media_info;
     MuxOptions options;
     MergeStats stats_value;
     std::array<std::int64_t, 2> last_output_us = {
@@ -346,8 +408,9 @@ bool Mp4Muxer::open(const std::filesystem::path& output,
 
 bool Mp4Muxer::write_file(const ScanResult& scan,
                           const FilePlan& plan,
+                          const MediaInfo& source_media,
                           std::string& error) {
-    return impl_->write_file(scan, plan, error);
+    return impl_->write_file(scan, plan, source_media, error);
 }
 
 bool Mp4Muxer::finish(std::string& error) {

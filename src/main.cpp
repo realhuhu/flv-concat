@@ -285,7 +285,7 @@ int run(const std::filesystem::path& executable,
         std::cout << "  " << scan.video_runs.size() << " video run(s), "
                   << scan.audio_runs.size() << " audio run(s), "
                   << plan.duplicate_runs_dropped << " duplicate run(s) removed\n";
-        if (!muxer.write_file(scan, plan, error)) {
+        if (!muxer.write_file(scan, plan, media[index], error)) {
             muxer.abort();
             remove_temporary(temporary);
             std::cerr << "error: " << error << '\n';

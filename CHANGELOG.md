@@ -2,6 +2,19 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.2.0] - 2026-08-08
+
+### Added
+
+- Inject changed H.265 VPS/SPS/PPS into the first keyframe of a compatible
+  segment without re-encoding, so regenerated encoder parameter sets remain
+  decodable after lossless merging.
+
+### Fixed
+
+- Reject decoder-format changes which cannot be made safe without re-encoding
+  before opening the output file.
+
 ## [1.1.0] - 2026-08-08
 
 ### Fixed

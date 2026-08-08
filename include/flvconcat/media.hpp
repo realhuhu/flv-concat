@@ -32,6 +32,7 @@ public:
               std::string& error);
     bool write_file(const ScanResult& scan,
                     const FilePlan& plan,
+                    const MediaInfo& source_media,
                     std::string& error);
     bool finish(std::string& error);
     void abort();

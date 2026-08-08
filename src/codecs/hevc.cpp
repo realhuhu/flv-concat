@@ -335,6 +335,64 @@ bool collect_nal_headers(const std::vector<std::vector<std::uint8_t>>& parameter
     return true;
 }
 
+bool hevc_configuration_requires_inband_update(const ByteVector& expected,
+                                               const ByteVector& actual) {
+    return expected != actual;
+}
+
+bool append_length_prefixed_nal(ByteVector& destination,
+                                const ByteVector& nal,
+                                std::uint8_t nal_length_size) {
+    if (nal.empty() || nal_length_size == 0 || nal_length_size > 4) {
+        return false;
+    }
+    const auto maximum_length = (std::uint64_t{1} << (8U * nal_length_size)) - 1U;
+    if (nal.size() > maximum_length) {
+        return false;
+    }
+    for (int shift = static_cast<int>(nal_length_size) - 1; shift >= 0; --shift) {
+        destination.push_back(
+            static_cast<std::uint8_t>((static_cast<std::uint64_t>(nal.size()) >>
+                                       (8U * static_cast<unsigned>(shift))) &
+                                      0xFFU));
+    }
+    destination.insert(destination.end(), nal.begin(), nal.end());
+    return true;
+}
+
+bool prepend_hevc_configuration(const ByteVector& configuration,
+                                ByteVector& payload,
+                                std::string& error) {
+    HevcConfiguration parsed;
+    if (!parse_hvcc_configuration(configuration, parsed)) {
+        error = "cannot inject invalid H.265 configuration";
+        return false;
+    }
+
+    ByteVector prefix;
+    const auto append_array = [&](const std::vector<std::vector<std::uint8_t>>& array) {
+        for (const auto& nal : array) {
+            if (!append_length_prefixed_nal(prefix, nal, parsed.nal_length_size)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    if (!append_array(parsed.video_parameter_sets) ||
+        !append_array(parsed.sequence_parameter_sets) ||
+        !append_array(parsed.picture_parameter_sets)) {
+        error = "cannot inject H.265 parameter sets with this NAL length";
+        return false;
+    }
+    if (prefix.empty()) {
+        error = "H.265 configuration has no parameter sets to inject";
+        return false;
+    }
+    prefix.insert(prefix.end(), payload.begin(), payload.end());
+    payload.swap(prefix);
+    return true;
+}
+
 bool parse_configuration(const ByteVector& bytes, VideoConfiguration& configuration) {
     HevcConfiguration parsed;
     if (!parse_hvcc_configuration(bytes, parsed) || parsed.sequence_parameter_sets.empty()) {
@@ -398,8 +456,12 @@ bool configurations_compatible(const ByteVector& expected, const ByteVector& act
 
 const VideoCodecDescriptor& hevc_descriptor() {
     static const VideoCodecDescriptor descriptor{
-        AV_CODEC_ID_HEVC, 12, "H.265", "H.265 VPS/SPS/PPS or NAL length differs",
-        parse_configuration, configurations_compatible};
+        AV_CODEC_ID_HEVC, 12, "H.265",
+        "H.265 decoder format or NAL length differs; re-encoding is required",
+        parse_configuration,
+        configurations_compatible,
+        hevc_configuration_requires_inband_update,
+        prepend_hevc_configuration};
     return descriptor;
 }
 

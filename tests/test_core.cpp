@@ -1,6 +1,7 @@
 #include "flvconcat/media.hpp"
 #include "flvconcat/scanner.hpp"
 #include "flvconcat/timeline.hpp"
+#include "flvconcat/codecs/registry.hpp"
 
 extern "C" {
 #include <libavcodec/codec_id.h>
@@ -342,10 +343,26 @@ void test_h265_probe_and_scanner() {
     check(regenerated_compatible,
           "H.265 regenerated VPS/SPS/PPS with the same decoded format are compatible: " + error);
 
+    const auto* hevc = flvconcat::codecs::video_codec(AV_CODEC_ID_HEVC);
+    std::vector<std::uint8_t> payload = {0x00, 0x00, 0x00, 0x01, 0x26};
+    const auto original_payload_size = payload.size();
+    const bool injected = hevc && hevc->configuration_requires_inband_update &&
+                          hevc->prepend_configuration &&
+                          hevc->configuration_requires_inband_update(
+                              info.video_config, regenerated_variant.video_config) &&
+                          hevc->prepend_configuration(regenerated_variant.video_config,
+                                                       payload,
+                                                       error);
+    check(injected, "H.265 parameter sets can be injected without re-encoding: " + error);
+    check(payload.size() > original_payload_size && payload[0] == 0x00 && payload[1] == 0x00 &&
+              payload[2] == 0x00 && payload[3] == 0x18 && payload.back() == 0x26,
+          "H.265 injection uses the source NAL length and prepends the VPS");
+
     auto changed_sps = info;
     changed_sps.video_config[57] ^= 0x01;
-    check(!flvconcat::media_compatible(info, changed_sps, error),
-          "H.265 SPS differences remain incompatible");
+    check(!flvconcat::media_compatible(info, changed_sps, error) &&
+              error == "H.265 decoder format or NAL length differs; re-encoding is required",
+          "H.265 decoder-format differences are rejected before merging");
 
     std::error_code ignored;
     std::filesystem::remove(path, ignored);

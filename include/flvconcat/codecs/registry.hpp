@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -21,6 +22,10 @@ struct VideoCodecDescriptor {
     std::string_view compatibility_reason;
     bool (*parse_configuration)(const ByteVector&, VideoConfiguration&) = nullptr;
     bool (*configuration_compatible)(const ByteVector&, const ByteVector&) = nullptr;
+    // Some codecs can carry a changed decoder configuration in-band without
+    // re-encoding. The muxer calls this only after compatibility has passed.
+    bool (*configuration_requires_inband_update)(const ByteVector&, const ByteVector&) = nullptr;
+    bool (*prepend_configuration)(const ByteVector&, ByteVector&, std::string&) = nullptr;
 };
 
 struct AudioConfiguration {
