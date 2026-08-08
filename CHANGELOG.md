@@ -2,6 +2,15 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.1.0] - 2026-08-08
+
+### Fixed
+
+- Accept H.265 segments whose encoder regenerated VPS/SPS/PPS reference-picture,
+  VUI, or default-slice fields while keeping the same NAL length, decoded format,
+  and parameter-set IDs, matching the original repair tool's merge behavior.
+- Add a regression test for the supplied 20260808 来聂卫平杯棋牌大师赛 FLVs.
+
 ## [1.0.3] - 2026-08-08
 
 ### Added

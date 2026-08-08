@@ -112,7 +112,7 @@ public:
             return false;
         }
         audio_stream->time_base = AVRational{1, sample_rate};
-        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.0.3", 0);
+        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.1.0", 0);
 
         result = avio_open(&context->pb, output_name.c_str(), AVIO_FLAG_WRITE);
         if (result < 0) {
