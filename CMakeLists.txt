@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   FLVConcat
-  VERSION 1.2.0
+  VERSION 1.1.1
   DESCRIPTION "Repair broken live-recording FLV timestamps and losslessly merge them into MP4"
   LANGUAGES CXX)
 
