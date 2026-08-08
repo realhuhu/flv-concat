@@ -73,8 +73,8 @@ struct MediaInfo {
     int audio_codec = 0;
     int sample_rate = 0;
     int audio_channels = 0;
-    std::uint64_t video_config_hash = 0;
-    std::uint64_t audio_config_hash = 0;
+    std::vector<std::uint8_t> video_config;
+    std::vector<std::uint8_t> audio_config;
 };
 
 struct MergeStats {

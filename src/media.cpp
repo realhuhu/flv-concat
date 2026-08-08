@@ -31,21 +31,260 @@ std::string ffmpeg_error(int code) {
     return buffer.data();
 }
 
-std::uint64_t hash_bytes(const std::uint8_t* bytes, std::size_t size) {
-    constexpr std::uint64_t basis = 14695981039346656037ULL;
-    constexpr std::uint64_t prime = 1099511628211ULL;
-    auto hash = basis;
-    for (std::size_t index = 0; index < size; ++index) {
-        hash ^= bytes[index];
-        hash *= prime;
-    }
-    return hash;
-}
-
 struct InputContext {
     AVFormatContext* value = nullptr;
     ~InputContext() { avformat_close_input(&value); }
 };
+
+struct AvcConfiguration {
+    std::uint8_t nal_length_size = 0;
+    std::vector<std::vector<std::uint8_t>> sequence_parameter_sets;
+    std::vector<std::vector<std::uint8_t>> picture_parameter_sets;
+};
+
+bool read_be16(const std::vector<std::uint8_t>& bytes,
+               std::size_t& offset,
+               std::uint16_t& value) {
+    if (offset + 2 > bytes.size()) {
+        return false;
+    }
+    value = static_cast<std::uint16_t>(bytes[offset] << 8U) | bytes[offset + 1];
+    offset += 2;
+    return true;
+}
+
+bool read_nal_units(const std::vector<std::uint8_t>& bytes,
+                    std::size_t& offset,
+                    std::size_t count,
+                    std::vector<std::vector<std::uint8_t>>& destination) {
+    destination.clear();
+    destination.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        std::uint16_t length = 0;
+        if (!read_be16(bytes, offset, length) || length == 0 || offset + length > bytes.size()) {
+            return false;
+        }
+        destination.emplace_back(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+                                 bytes.begin() + static_cast<std::ptrdiff_t>(offset + length));
+        offset += length;
+    }
+    std::sort(destination.begin(), destination.end());
+    return true;
+}
+
+bool parse_avc_configuration(const std::vector<std::uint8_t>& bytes, AvcConfiguration& configuration) {
+    // AVCDecoderConfigurationRecord (ISO/IEC 14496-15). The optional high-profile
+    // extension follows the PPS list and is deliberately ignored: some FLV recorders
+    // write it inconsistently even though their SPS/PPS and media packets are identical.
+    if (bytes.size() < 7 || bytes[0] != 1) {
+        return false;
+    }
+    const auto sps_count = static_cast<std::size_t>(bytes[5] & 0x1FU);
+    if (sps_count == 0) {
+        return false;
+    }
+
+    configuration = {};
+    configuration.nal_length_size = static_cast<std::uint8_t>((bytes[4] & 0x03U) + 1U);
+    std::size_t offset = 6;
+    if (!read_nal_units(bytes, offset, sps_count, configuration.sequence_parameter_sets) ||
+        offset >= bytes.size()) {
+        return false;
+    }
+    const auto pps_count = static_cast<std::size_t>(bytes[offset++]);
+    return pps_count > 0 &&
+           read_nal_units(bytes, offset, pps_count, configuration.picture_parameter_sets);
+}
+
+class BitReader {
+public:
+    explicit BitReader(const std::vector<std::uint8_t>& bytes) : bytes_(bytes) {}
+
+    bool read(unsigned count, std::uint32_t& value) {
+        if (count > 32 || bit_offset_ + count > bytes_.size() * 8U) {
+            return false;
+        }
+        value = 0;
+        for (unsigned index = 0; index < count; ++index) {
+            const auto byte = bytes_[(bit_offset_ + index) / 8U];
+            const auto shift = 7U - static_cast<unsigned>((bit_offset_ + index) % 8U);
+            value = (value << 1U) | ((byte >> shift) & 1U);
+        }
+        bit_offset_ += count;
+        return true;
+    }
+
+    [[nodiscard]] std::size_t remaining() const { return bytes_.size() * 8U - bit_offset_; }
+
+private:
+    const std::vector<std::uint8_t>& bytes_;
+    std::size_t bit_offset_ = 0;
+};
+
+bool read_audio_object_type(BitReader& reader, std::uint32_t& object_type) {
+    if (!reader.read(5, object_type)) {
+        return false;
+    }
+    if (object_type != 31) {
+        return true;
+    }
+    std::uint32_t extension = 0;
+    if (!reader.read(6, extension)) {
+        return false;
+    }
+    object_type = 32 + extension;
+    return true;
+}
+
+bool read_sampling_frequency(BitReader& reader, std::uint32_t& frequency) {
+    static constexpr std::array<std::uint32_t, 13> frequencies = {
+        96'000, 88'200, 64'000, 48'000, 44'100, 32'000, 24'000,
+        22'050, 16'000, 12'000, 11'025, 8'000, 7'350};
+
+    std::uint32_t index = 0;
+    if (!reader.read(4, index)) {
+        return false;
+    }
+    if (index == 15) {
+        return reader.read(24, frequency);
+    }
+    if (index >= frequencies.size()) {
+        return false;
+    }
+    frequency = frequencies[index];
+    return true;
+}
+
+bool is_ga_audio_object_type(std::uint32_t object_type) {
+    switch (object_type) {
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+        case 6:
+        case 7:
+        case 17:
+        case 19:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+            return true;
+        default:
+            return false;
+    }
+}
+
+struct AacConfiguration {
+    std::uint32_t signalling_object_type = 0;
+    std::uint32_t core_object_type = 0;
+    std::uint32_t sampling_frequency = 0;
+    std::uint32_t extension_sampling_frequency = 0;
+    std::uint32_t channel_configuration = 0;
+    bool frame_length_960 = false;
+    bool sync_sbr_present = false;
+    std::uint32_t sync_sbr_sampling_frequency = 0;
+};
+
+bool parse_aac_configuration(const std::vector<std::uint8_t>& bytes, AacConfiguration& configuration) {
+    BitReader reader(bytes);
+    configuration = {};
+    if (!read_audio_object_type(reader, configuration.signalling_object_type) ||
+        !read_sampling_frequency(reader, configuration.sampling_frequency) ||
+        !reader.read(4, configuration.channel_configuration) ||
+        configuration.channel_configuration == 0 || configuration.channel_configuration > 7) {
+        return false;
+    }
+
+    configuration.core_object_type = configuration.signalling_object_type;
+    if (configuration.signalling_object_type == 5 || configuration.signalling_object_type == 29) {
+        if (!read_sampling_frequency(reader, configuration.extension_sampling_frequency) ||
+            !read_audio_object_type(reader, configuration.core_object_type)) {
+            return false;
+        }
+    }
+    if (!is_ga_audio_object_type(configuration.core_object_type)) {
+        return false;
+    }
+
+    std::uint32_t frame_length_flag = 0;
+    std::uint32_t depends_on_core_coder = 0;
+    std::uint32_t extension_flag = 0;
+    if (!reader.read(1, frame_length_flag) || !reader.read(1, depends_on_core_coder)) {
+        return false;
+    }
+    if (depends_on_core_coder != 0) {
+        std::uint32_t core_coder_delay = 0;
+        if (!reader.read(14, core_coder_delay)) {
+            return false;
+        }
+    }
+    if (!reader.read(1, extension_flag)) {
+        return false;
+    }
+    if (extension_flag != 0) {
+        return false;
+    }
+    configuration.frame_length_960 = frame_length_flag != 0;
+
+    // An optional sync extension may be present after GASpecificConfig. An explicit
+    // "SBR not present" extension is metadata only and is intentionally equivalent
+    // to its absence. A real SBR extension remains part of the compatibility check.
+    if (reader.remaining() >= 17) {
+        std::uint32_t sync_extension_type = 0;
+        if (!reader.read(11, sync_extension_type) || sync_extension_type != 0x2B7) {
+            return true;
+        }
+        std::uint32_t extension_object_type = 0;
+        if (!read_audio_object_type(reader, extension_object_type) || extension_object_type != 5) {
+            return true;
+        }
+        std::uint32_t sbr_present = 0;
+        if (!reader.read(1, sbr_present)) {
+            return false;
+        }
+        if (sbr_present != 0) {
+            configuration.sync_sbr_present = true;
+            if (!read_sampling_frequency(reader, configuration.sync_sbr_sampling_frequency)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool h264_configurations_compatible(const std::vector<std::uint8_t>& expected,
+                                    const std::vector<std::uint8_t>& actual) {
+    if (expected == actual) {
+        return true;
+    }
+    AvcConfiguration expected_configuration;
+    AvcConfiguration actual_configuration;
+    return parse_avc_configuration(expected, expected_configuration) &&
+           parse_avc_configuration(actual, actual_configuration) &&
+           expected_configuration.nal_length_size == actual_configuration.nal_length_size &&
+           expected_configuration.sequence_parameter_sets == actual_configuration.sequence_parameter_sets &&
+           expected_configuration.picture_parameter_sets == actual_configuration.picture_parameter_sets;
+}
+
+bool aac_configurations_compatible(const std::vector<std::uint8_t>& expected,
+                                   const std::vector<std::uint8_t>& actual) {
+    if (expected == actual) {
+        return true;
+    }
+    AacConfiguration expected_configuration;
+    AacConfiguration actual_configuration;
+    return parse_aac_configuration(expected, expected_configuration) &&
+           parse_aac_configuration(actual, actual_configuration) &&
+           expected_configuration.signalling_object_type == actual_configuration.signalling_object_type &&
+           expected_configuration.core_object_type == actual_configuration.core_object_type &&
+           expected_configuration.sampling_frequency == actual_configuration.sampling_frequency &&
+           expected_configuration.extension_sampling_frequency == actual_configuration.extension_sampling_frequency &&
+           expected_configuration.channel_configuration == actual_configuration.channel_configuration &&
+           expected_configuration.frame_length_960 == actual_configuration.frame_length_960 &&
+           expected_configuration.sync_sbr_present == actual_configuration.sync_sbr_present &&
+           expected_configuration.sync_sbr_sampling_frequency == actual_configuration.sync_sbr_sampling_frequency;
+}
 
 bool open_input(const std::filesystem::path& path, InputContext& input, std::string& error) {
     AVDictionary* options = nullptr;
@@ -109,12 +348,12 @@ bool probe_media(const std::filesystem::path& path, MediaInfo& info, std::string
     info.sample_rate = audio->codecpar->sample_rate;
     info.audio_channels = audio->codecpar->ch_layout.nb_channels;
     if (video->codecpar->extradata && video->codecpar->extradata_size > 0) {
-        info.video_config_hash = hash_bytes(video->codecpar->extradata,
-                                            static_cast<std::size_t>(video->codecpar->extradata_size));
+        info.video_config.assign(video->codecpar->extradata,
+                                 video->codecpar->extradata + video->codecpar->extradata_size);
     }
     if (audio->codecpar->extradata && audio->codecpar->extradata_size > 0) {
-        info.audio_config_hash = hash_bytes(audio->codecpar->extradata,
-                                            static_cast<std::size_t>(audio->codecpar->extradata_size));
+        info.audio_config.assign(audio->codecpar->extradata,
+                                 audio->codecpar->extradata + audio->codecpar->extradata_size);
     }
     return true;
 }
@@ -130,10 +369,10 @@ bool media_compatible(const MediaInfo& expected, const MediaInfo& actual, std::s
         reason = "audio sample rate differs";
     } else if (expected.audio_channels != actual.audio_channels) {
         reason = "audio channel count differs";
-    } else if (expected.video_config_hash != actual.video_config_hash) {
-        reason = "H.264 stream configuration differs";
-    } else if (expected.audio_config_hash != actual.audio_config_hash) {
-        reason = "AAC stream configuration differs";
+    } else if (!h264_configurations_compatible(expected.video_config, actual.video_config)) {
+        reason = "H.264 SPS/PPS or NAL length differs";
+    } else if (!aac_configurations_compatible(expected.audio_config, actual.audio_config)) {
+        reason = "AAC object type, sample rate, channel layout, or frame length differs";
     } else {
         reason.clear();
         return true;

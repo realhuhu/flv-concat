@@ -24,7 +24,7 @@ Download the Windows x64 archive from [GitHub Releases](https://github.com/realh
 
 Official releases build a minimal FFmpeg 7.1.1 from a SHA-256-verified source archive, enabling only the FLV, MP4, H.264/AAC, and local-file components FLVConcat needs. The release workflow rejects executables larger than 4 MiB to catch accidental full-FFmpeg linkage.
 
-Supported inputs are FLV files containing H.264/AVC video and AAC audio. Files in one merge must have identical resolution, codecs, sample rate, channel count, and codec configuration.
+Supported inputs are FLV files containing H.264/AVC video and AAC audio. Files in one merge must have identical resolution, codecs, sample rate, and channel count. H.264 compatibility compares NAL length, SPS, and PPS; AAC compatibility compares object type, sample rate, channel layout, and frame length. Differences only in optional avcC/ASC extension bytes do not block a merge.
 
 ## Usage
 
