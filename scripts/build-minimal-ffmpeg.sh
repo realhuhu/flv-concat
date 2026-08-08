@@ -22,39 +22,82 @@ if [[ ! -x "$source_dir/configure" ]]; then
   exit 2
 fi
 
-for tool in cl.exe lib.exe make; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "required build tool is unavailable: $tool" >&2
-    exit 2
-  fi
-done
-
 mkdir -p "$install_prefix"
 cd "$source_dir"
 
-./configure \
-  --prefix="$install_prefix" \
-  --toolchain=msvc \
-  --arch=x86_64 \
-  --target-os=win32 \
-  --enable-static \
-  --disable-shared \
-  --disable-everything \
-  --disable-programs \
-  --disable-doc \
-  --disable-debug \
-  --disable-network \
-  --disable-x86asm \
-  --enable-avformat \
-  --enable-avcodec \
-  --enable-avutil \
-  --enable-demuxer=flv \
-  --enable-muxer=mp4 \
-  --enable-parser=h264 \
-  --enable-parser=aac \
-  --enable-protocol=file \
-  --enable-bsf=h264_mp4toannexb \
-  --enable-bsf=aac_adtstoasc
+if [[ "$(uname -s)" == Linux* ]]; then
+  for tool in cc c++ ar make; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "required build tool is unavailable: $tool" >&2
+      exit 2
+    fi
+  done
+
+  # Linux releases use static FFmpeg archives built without autodetected
+  # external codecs or protocols. This keeps the release independent of the
+  # distribution's libavformat/libavcodec package names and ABI versions.
+  ./configure \
+    --prefix="$install_prefix" \
+    --arch=x86_64 \
+    --target-os=linux \
+    --enable-static \
+    --disable-shared \
+    --disable-everything \
+    --disable-autodetect \
+    --disable-avdevice \
+    --disable-avfilter \
+    --disable-postproc \
+    --disable-swresample \
+    --disable-swscale \
+    --disable-programs \
+    --disable-doc \
+    --disable-debug \
+    --disable-network \
+    --disable-iconv \
+    --disable-x86asm \
+    --enable-pic \
+    --enable-avformat \
+    --enable-avcodec \
+    --enable-avutil \
+    --enable-demuxer=flv \
+    --enable-muxer=mp4 \
+    --enable-parser=h264 \
+    --enable-parser=aac \
+    --enable-protocol=file \
+    --enable-bsf=h264_mp4toannexb \
+    --enable-bsf=aac_adtstoasc
+else
+  for tool in cl.exe lib.exe make; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "required build tool is unavailable: $tool" >&2
+      exit 2
+    fi
+  done
+
+  ./configure \
+    --prefix="$install_prefix" \
+    --toolchain=msvc \
+    --arch=x86_64 \
+    --target-os=win32 \
+    --enable-static \
+    --disable-shared \
+    --disable-everything \
+    --disable-programs \
+    --disable-doc \
+    --disable-debug \
+    --disable-network \
+    --disable-x86asm \
+    --enable-avformat \
+    --enable-avcodec \
+    --enable-avutil \
+    --enable-demuxer=flv \
+    --enable-muxer=mp4 \
+    --enable-parser=h264 \
+    --enable-parser=aac \
+    --enable-protocol=file \
+    --enable-bsf=h264_mp4toannexb \
+    --enable-bsf=aac_adtstoasc
+fi
 
 make -j"${NUMBER_OF_PROCESSORS:-2}"
 make install

@@ -2,6 +2,14 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [1.1.4] - 2026-08-08
+
+### Changed
+
+- Build the Linux release with the minimal FFmpeg libraries statically linked,
+  so it no longer depends on distribution-specific `libav*.so` package names.
+- Reuse the same verified FFmpeg source build for Linux CI, CodeQL, and Release.
+
 ## [1.1.3] - 2026-08-08
 
 ### Added

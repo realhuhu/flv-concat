@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   FLVConcat
-  VERSION 1.1.3
+  VERSION 1.1.4
   DESCRIPTION "Repair broken live-recording FLV timestamps and losslessly merge them into MP4"
   LANGUAGES CXX)
 
@@ -11,6 +11,7 @@ include(CTest)
 
 option(FLVCONCAT_BUILD_TESTS "Build FLVConcat tests" ${BUILD_TESTING})
 option(FLVCONCAT_FFMPEG_AOM_STUB "Provide a compatibility symbol for a minimal FFmpeg 7.1 build" OFF)
+option(FLVCONCAT_FFMPEG_STATIC "Link FFmpeg from static archives under FFMPEG_ROOT" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -63,6 +64,12 @@ endif()
 add_executable(flvconcat src/main.cpp)
 target_link_libraries(flvconcat PRIVATE flvconcat_media)
 target_compile_definitions(flvconcat PRIVATE FLVCONCAT_VERSION="${PROJECT_VERSION}")
+if(FLVCONCAT_FFMPEG_AOM_STUB)
+  # Keep the compatibility symbol in the final executable as well as the
+  # media archive. Static FFmpeg archives reference it after the archive
+  # containing the media objects has already been scanned by the linker.
+  target_sources(flvconcat PRIVATE src/ffmpeg_aom_stub.cpp)
+endif()
 
 if(MSVC)
   target_compile_options(flvconcat_codecs PRIVATE /W4 /permissive- /utf-8)
@@ -83,6 +90,9 @@ endif()
 if(FLVCONCAT_BUILD_TESTS)
   add_executable(flvconcat_tests tests/test_core.cpp)
   target_link_libraries(flvconcat_tests PRIVATE flvconcat_media)
+  if(FLVCONCAT_FFMPEG_AOM_STUB)
+    target_sources(flvconcat_tests PRIVATE src/ffmpeg_aom_stub.cpp)
+  endif()
   if(MSVC)
     target_compile_options(flvconcat_tests PRIVATE /W4 /permissive- /utf-8)
     set_property(TARGET flvconcat_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

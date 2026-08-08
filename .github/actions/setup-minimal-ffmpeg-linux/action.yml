@@ -1,0 +1,70 @@
+name: Setup minimal static FFmpeg (Linux)
+description: Build and cache the narrowly scoped static FFmpeg used by the Linux release
+
+inputs:
+  version:
+    description: FFmpeg release version
+    required: false
+    default: "7.1.1"
+  sha256:
+    description: SHA-256 of the official FFmpeg source archive
+    required: false
+    default: "9a6e57a446b671012612aaeb9df5126794d5ac8f2015ca220934f99a6a4e0601"
+
+outputs:
+  root:
+    description: Absolute path to the installed FFmpeg tree
+    value: ${{ steps.paths.outputs.root }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve build paths
+      id: paths
+      shell: bash
+      run: |
+        root="$GITHUB_WORKSPACE/build/ffmpeg-minimal-linux"
+        archive="$GITHUB_WORKSPACE/build/ffmpeg-${{ inputs.version }}.tar.gz"
+        source="$GITHUB_WORKSPACE/build/ffmpeg-${{ inputs.version }}"
+        {
+          printf 'root=%s\n' "$root"
+          printf 'archive=%s\n' "$archive"
+          printf 'source=%s\n' "$source"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Cache minimal FFmpeg
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: build/ffmpeg-minimal-linux
+        key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-gcc-${{ inputs.version }}-${{ hashFiles('scripts/build-minimal-ffmpeg.sh', '.github/actions/setup-minimal-ffmpeg-linux/action.yml') }}
+
+    - name: Download and verify FFmpeg source
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        FFMPEG_ARCHIVE: ${{ steps.paths.outputs.archive }}
+        FFMPEG_SOURCE: ${{ steps.paths.outputs.source }}
+        FFMPEG_VERSION: ${{ inputs.version }}
+        FFMPEG_SHA256: ${{ inputs.sha256 }}
+      run: |
+        mkdir -p "$(dirname "$FFMPEG_ARCHIVE")"
+        curl --fail --location --retry 5 --retry-delay 5 --retry-all-errors \
+          --connect-timeout 30 \
+          --output "$FFMPEG_ARCHIVE" \
+          "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.gz"
+        actual=$(sha256sum "$FFMPEG_ARCHIVE" | cut -d' ' -f1)
+        if [[ "$actual" != "$FFMPEG_SHA256" ]]; then
+          echo "FFmpeg source checksum mismatch: expected $FFMPEG_SHA256, got $actual" >&2
+          exit 1
+        fi
+        rm -rf "$FFMPEG_SOURCE"
+        tar -xf "$FFMPEG_ARCHIVE" -C "$(dirname "$FFMPEG_ARCHIVE")"
+
+    - name: Build minimal static FFmpeg
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        FFMPEG_ROOT: ${{ steps.paths.outputs.root }}
+        FFMPEG_SOURCE: ${{ steps.paths.outputs.source }}
+      run: bash ./scripts/build-minimal-ffmpeg.sh "$FFMPEG_SOURCE" "$FFMPEG_ROOT"

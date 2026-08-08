@@ -20,12 +20,14 @@ jobs:
       - uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
-      - name: Install FFmpeg development libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev
+      - name: Build or restore minimal static FFmpeg
+        id: ffmpeg
+        uses: ./.github/actions/setup-minimal-ffmpeg-linux
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            "-DFFMPEG_ROOT=${{ steps.ffmpeg.outputs.root }}" \
+            -DFLVCONCAT_FFMPEG_STATIC=ON \
+            -DFLVCONCAT_FFMPEG_AOM_STUB=ON
           cmake --build build --parallel
       - uses: github/codeql-action/analyze@v4

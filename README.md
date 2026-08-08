@@ -23,7 +23,7 @@ FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。�
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest) 下载 Windows x64 压缩包或 Linux x64 压缩包。Windows 官方包静态链接所需运行库，不需要另外安装 FFmpeg；Linux 包使用系统 FFmpeg 运行库，Ubuntu/Debian 可安装 `libavformat`、`libavcodec` 和 `libavutil` 运行库。
+从 [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest) 下载 Windows x64 压缩包或 Linux x64 压缩包。官方包都静态链接裁剪后的 FFmpeg，不需要另外安装 `libavformat`、`libavcodec` 或 `libavutil` 运行库；Linux 仍使用发行版提供的标准 C/C++ 运行库。
 
 官方发布版会从经过 SHA-256 校验的 FFmpeg 7.1.1 源码构建裁剪库，仅启用 FLV、MP4、H.264/H.265/AAC 和本地文件所需组件；Release 工作流同时限制 EXE 不得超过 4 MiB，避免误链接完整 FFmpeg。
 
@@ -80,7 +80,7 @@ FLVConcat 使用两遍处理：
 
 ## 从源码构建
 
-需要 CMake 3.20+、支持 C++17 的编译器，以及 FFmpeg 的 \`libavformat\`、\`libavcodec\`、\`libavutil\` 开发库。
+需要 CMake 3.20+、支持 C++17 的编译器，以及 FFmpeg 7.1.1 源码构建工具。
 
 Windows 推荐使用 vcpkg：
 
@@ -92,16 +92,20 @@ ctest --test-dir build -C Release --output-on-failure
 
 vcpkg 方案适合一般开发。官方小体积 Windows 二进制的完整构建配置位于 [scripts/build-minimal-ffmpeg.sh](scripts/build-minimal-ffmpeg.sh)，由 CI 和 Release 共用的本地 Action 自动下载、校验、编译和缓存。
 
-Ubuntu/Debian：
+Ubuntu/Debian（构建裁剪版 FFmpeg）：
 
 ~~~bash
-sudo apt-get install cmake g++ libavformat-dev libavcodec-dev libavutil-dev
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+sudo apt-get install cmake g++ make curl
+curl -fsSL -o /tmp/ffmpeg-7.1.1.tar.gz https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.gz
+echo "9a6e57a446b671012612aaeb9df5126794d5ac8f2015ca220934f99a6a4e0601  /tmp/ffmpeg-7.1.1.tar.gz" | sha256sum -c -
+tar -xf /tmp/ffmpeg-7.1.1.tar.gz -C /tmp
+bash scripts/build-minimal-ffmpeg.sh /tmp/ffmpeg-7.1.1 build/ffmpeg-minimal
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFFMPEG_ROOT="$PWD/build/ffmpeg-minimal" -DFLVCONCAT_FFMPEG_STATIC=ON -DFLVCONCAT_FFMPEG_AOM_STUB=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ~~~
 
-Linux Release 压缩包为 x64 构建，运行时需要发行版提供的 FFmpeg 动态库。
+Linux Release 压缩包为 x64 构建，FFmpeg 已静态链接；运行时只需要发行版提供的标准 C/C++ 运行库。
 
 ## 限制与安全
 

@@ -14,18 +14,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install FFmpeg development libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libavformat-dev libavcodec-dev libavutil-dev
+      - name: Build or restore minimal static FFmpeg
+        id: ffmpeg
+        uses: ./.github/actions/setup-minimal-ffmpeg-linux
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          "-DFFMPEG_ROOT=${{ steps.ffmpeg.outputs.root }}"
+          -DFLVCONCAT_FFMPEG_STATIC=ON
+          -DFLVCONCAT_FFMPEG_AOM_STUB=ON
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
       - name: CLI smoke test
         run: ./build/flvconcat --version
+      - name: Check FFmpeg linkage
+        run: |
+          if ldd build/flvconcat 2>/dev/null | grep -Eq 'libav(format|codec|util)'; then
+            echo "Linux executable still depends on a shared FFmpeg library" >&2
+            exit 1
+          fi
 
   windows:
     name: Windows x64 / MSVC

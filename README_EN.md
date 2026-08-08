@@ -21,7 +21,7 @@ No media is decoded or re-encoded. Processing speed is primarily limited by disk
 
 ## Download
 
-Download the Windows x64 or Linux x64 archive from [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest). The Windows executable is statically linked and does not require a separate FFmpeg installation; the Linux build uses the distribution's FFmpeg shared libraries.
+Download the Windows x64 or Linux x64 archive from [GitHub Releases](https://github.com/realhuhu/flv-concat/releases/latest). Both official binaries statically link the trimmed FFmpeg libraries and do not require distribution-specific `libavformat`, `libavcodec`, or `libavutil` packages. The Linux build still uses the distribution's standard C/C++ runtime.
 
 Official releases build a minimal FFmpeg 7.1.1 from a SHA-256-verified source archive, enabling only the FLV, MP4, H.264/H.265/AAC, and local-file components FLVConcat needs. The release workflow rejects executables larger than 4 MiB to catch accidental full-FFmpeg linkage.
 
@@ -52,7 +52,7 @@ See [docs/algorithm.md](docs/algorithm.md) for the detailed model.
 
 ## Building
 
-You need CMake 3.20+, a C++17 compiler, and FFmpeg development libraries for libavformat, libavcodec, and libavutil. The repository includes a vcpkg manifest for convenient Windows development. Official compact binaries use the exact configuration in [scripts/build-minimal-ffmpeg.sh](scripts/build-minimal-ffmpeg.sh), shared by Windows CI and the release workflow. See the Chinese README above for ready-to-run commands.
+You need CMake 3.20+, a C++17 compiler, and the tools needed to build FFmpeg 7.1.1 from source. The repository includes a vcpkg manifest for convenient Windows development. Official compact binaries use the exact configuration in [scripts/build-minimal-ffmpeg.sh](scripts/build-minimal-ffmpeg.sh), shared by Windows and Linux CI and the release workflow. See the Chinese README above for ready-to-run commands.
 
 ## License
 
