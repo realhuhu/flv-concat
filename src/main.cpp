@@ -13,7 +13,10 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -43,6 +46,19 @@ std::string lower_ascii(std::string value) {
         return static_cast<char>(std::tolower(character));
     });
     return value;
+}
+
+std::string metadata_identity(std::string_view key) {
+    std::string identity;
+    identity.reserve(key.size());
+    for (const unsigned char byte : key) {
+        if (byte >= 'A' && byte <= 'Z') {
+            identity.push_back(static_cast<char>(byte - 'A' + 'a'));
+        } else if ((byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9')) {
+            identity.push_back(static_cast<char>(byte));
+        }
+    }
+    return identity.empty() ? std::string(key) : identity;
 }
 
 bool has_wildcard(const std::filesystem::path& path) {
@@ -339,6 +355,8 @@ int run(const std::filesystem::path& executable,
 
     std::cout << "Checking " << options.inputs.size() << " input file(s)...\n";
     std::vector<flvconcat::MediaInfo> media(options.inputs.size());
+    flvconcat::MetadataMap output_metadata;
+    std::unordered_set<std::string> output_metadata_identities;
     std::string error;
     for (std::size_t index = 0; index < options.inputs.size(); ++index) {
         if (!flvconcat::probe_media(options.inputs[index], media[index], error)) {
@@ -347,6 +365,11 @@ int run(const std::filesystem::path& executable,
         }
         std::cout << "  [" << (index + 1) << "] " << options.inputs[index].filename().u8string()
                   << "  " << flvconcat::media_summary(media[index]) << '\n';
+        for (const auto& [key, value] : media[index].metadata) {
+            if (output_metadata_identities.emplace(metadata_identity(key)).second) {
+                output_metadata.emplace(key, value);
+            }
+        }
         if (index > 0) {
             std::string reason;
             if (!flvconcat::media_compatible(media.front(), media[index], reason)) {
@@ -368,6 +391,9 @@ int run(const std::filesystem::path& executable,
     flvconcat::MuxOptions mux_options;
     mux_options.video_offset_us = *options.video_offset_ms * 1000;
     mux_options.faststart = options.faststart;
+    mux_options.metadata = std::move(output_metadata);
+    std::cout << "Preserving " << mux_options.metadata.size()
+              << " descriptive metadata field(s).\n";
     flvconcat::Mp4Muxer muxer;
     if (!muxer.open(temporary, media.front(), mux_options, error)) {
         remove_temporary(temporary);

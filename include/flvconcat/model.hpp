@@ -4,10 +4,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <map>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace flvconcat {
+
+using MetadataMap = std::map<std::string, std::string>;
 
 enum class StreamKind : std::uint8_t { video = 0, audio = 1 };
 
@@ -75,6 +79,7 @@ struct MediaInfo {
     int audio_channels = 0;
     std::vector<std::uint8_t> video_config;
     std::vector<std::uint8_t> audio_config;
+    MetadataMap metadata;
 };
 
 struct MergeStats {

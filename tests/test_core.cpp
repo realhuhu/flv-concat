@@ -7,10 +7,13 @@ extern "C" {
 #include <libavcodec/codec_id.h>
 }
 
+#include <algorithm>
+#include <cstring>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -31,11 +34,65 @@ void append_be24(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
 }
 
+void append_be16(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
+}
+
 void append_be32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 24) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
+}
+
+void append_be_double(std::vector<std::uint8_t>& bytes, double value) {
+    std::uint64_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value), "unexpected double size");
+    std::memcpy(&bits, &value, sizeof(bits));
+    for (int shift = 56; shift >= 0; shift -= 8) {
+        bytes.push_back(static_cast<std::uint8_t>((bits >> shift) & 0xFFU));
+    }
+}
+
+void append_amf_short_string(std::vector<std::uint8_t>& bytes, const std::string& value) {
+    append_be16(bytes, static_cast<std::uint16_t>(value.size()));
+    bytes.insert(bytes.end(), value.begin(), value.end());
+}
+
+void append_amf_string_value(std::vector<std::uint8_t>& bytes, const std::string& value) {
+    bytes.push_back(2);
+    append_amf_short_string(bytes, value);
+}
+
+void append_amf_string_property(std::vector<std::uint8_t>& bytes,
+                                const std::string& key,
+                                const std::string& value) {
+    append_amf_short_string(bytes, key);
+    append_amf_string_value(bytes, value);
+}
+
+void append_amf_number_property(std::vector<std::uint8_t>& bytes,
+                                const std::string& key,
+                                double value) {
+    append_amf_short_string(bytes, key);
+    bytes.push_back(0);
+    append_be_double(bytes, value);
+}
+
+void append_amf_date_property(std::vector<std::uint8_t>& bytes,
+                              const std::string& key,
+                              double milliseconds) {
+    append_amf_short_string(bytes, key);
+    bytes.push_back(11);
+    append_be_double(bytes, milliseconds);
+    append_be16(bytes, 0); // AMF0's obsolete timezone field
+}
+
+void append_amf_object_end(std::vector<std::uint8_t>& bytes) {
+    bytes.push_back(0);
+    bytes.push_back(0);
+    bytes.push_back(9);
 }
 
 void append_tag(std::vector<std::uint8_t>& file,
@@ -49,6 +106,65 @@ void append_tag(std::vector<std::uint8_t>& file,
     append_be24(file, 0);
     file.insert(file.end(), data.begin(), data.end());
     append_be32(file, static_cast<std::uint32_t>(11 + data.size()));
+}
+
+void append_metadata(std::vector<std::uint8_t>& file) {
+    std::vector<std::uint8_t> data;
+    append_amf_string_value(data, "@setDataFrame");
+    append_amf_string_value(data, "onMetaData");
+    data.push_back(8); // ECMA array
+    append_be32(data, 11);
+    append_amf_string_property(data, "Title", u8"武隆天生三桥围棋活动");
+    append_amf_string_property(data, "Artist", u8"棋手战鹰 (23141761)");
+    append_amf_string_property(data, "Comment", u8"主播：棋手战鹰\n分类：综合棋牌");
+    append_amf_string_property(data, "encoder", "iPhone 15 Pro Max/bilibili/9.7.");
+    append_amf_number_property(data, "displayWidth", 1080);
+    append_amf_number_property(data, "fps", 25);
+    append_amf_number_property(data, "duration", 123.5);
+
+    append_amf_short_string(data, "keyframes");
+    data.push_back(3); // object; the whole technical subtree must be ignored
+    append_amf_string_property(data, "times", "stale index");
+    append_amf_object_end(data);
+
+    append_amf_short_string(data, "FeatureEnabled");
+    data.push_back(1);
+    data.push_back(1);
+
+    append_amf_short_string(data, "Recorder");
+    data.push_back(3);
+    append_amf_string_property(data, "Version", "2.17.0");
+    append_amf_object_end(data);
+
+    append_amf_short_string(data, "BililiveRecorder");
+    data.push_back(3);
+    append_amf_string_property(data, "RoomId", "23141761");
+    append_amf_date_property(data, "StartTime", 1787293879848.0);
+    append_amf_string_property(data, "RecordedBy", "BililiveRecorder");
+    append_amf_object_end(data);
+    append_amf_object_end(data);
+    append_tag(file, 18, 0, data);
+}
+
+void append_malformed_metadata(std::vector<std::uint8_t>& file) {
+    std::vector<std::uint8_t> data;
+    append_amf_string_value(data, "onMetaData");
+    data.push_back(8);
+    append_be32(data, 2);
+    append_amf_string_property(data, "BadTitle", "must not leak");
+    append_amf_short_string(data, "BrokenValue");
+    data.push_back(17); // AMF3 marker is intentionally unsupported here
+    append_tag(file, 18, 0, data);
+}
+
+void append_metadata_update(std::vector<std::uint8_t>& file) {
+    std::vector<std::uint8_t> data;
+    append_amf_string_value(data, "onMetaData");
+    data.push_back(8);
+    append_be32(data, 1);
+    append_amf_string_property(data, "title", "later update must not replace the first title");
+    append_amf_object_end(data);
+    append_tag(file, 18, 0, data);
 }
 
 void append_video(std::vector<std::uint8_t>& file,
@@ -100,6 +216,13 @@ std::filesystem::path write_fixture(const std::string& name,
     output.write(reinterpret_cast<const char*>(file.data()),
                  static_cast<std::streamsize>(file.size()));
     return path;
+}
+
+bool file_contains(const std::filesystem::path& path, const std::string& text) {
+    std::ifstream input(path, std::ios::binary);
+    const std::string contents((std::istreambuf_iterator<char>(input)),
+                               std::istreambuf_iterator<char>());
+    return contents.find(text) != std::string::npos;
 }
 
 void test_runs_pairing_and_duplicate_content() {
@@ -233,6 +356,91 @@ void test_h264_probe() {
 
     std::error_code ignored;
     std::filesystem::remove(path, ignored);
+}
+
+void test_metadata_probe_filter_and_mp4_preservation() {
+    std::vector<std::uint8_t> tags;
+    append_malformed_metadata(tags);
+    append_metadata(tags);
+    append_metadata_update(tags);
+    append_h264_sequence(tags, 0, make_h264_configuration());
+    append_aac_sequence(tags, 0);
+    append_video(tags, 1000, 0x31);
+    append_audio(tags, 1000, 0x41);
+    const auto path = write_fixture("flvconcat-metadata.flv", tags);
+    const auto output = std::filesystem::temp_directory_path() / "flvconcat-metadata.mp4";
+
+    flvconcat::MediaInfo info;
+    std::string error;
+    const bool probe_ok = flvconcat::probe_media(path, info, error);
+    check(probe_ok, "metadata fixture probes successfully: " + error);
+    if (probe_ok) {
+        check(info.metadata.count("Title") == 1 &&
+                  info.metadata.at("Title") == u8"武隆天生三桥围棋活动",
+              "the first descriptive title is parsed from AMF0");
+        check(info.metadata.count("title") == 0,
+              "later metadata updates with different casing do not replace the first value");
+        check(info.metadata.count("BadTitle") == 0,
+              "a malformed ScriptData tag cannot leak partially parsed fields");
+        check(info.metadata.count("Artist") == 1 &&
+                  info.metadata.at("Artist") == u8"棋手战鹰 (23141761)",
+              "artist is parsed from AMF0");
+        check(info.metadata.count("BililiveRecorder.RoomId") == 1 &&
+                  info.metadata.count("BililiveRecorder.StartTime") == 1 &&
+                  info.metadata.at("BililiveRecorder.StartTime") ==
+                      "2026-08-21T06:31:19.848Z",
+              "custom recorder metadata and AMF0 dates are retained");
+        check(info.metadata.count("FeatureEnabled") == 1 &&
+                  info.metadata.at("FeatureEnabled") == "true" &&
+                  info.metadata.count("Recorder.Version") == 1,
+              "boolean and nested custom AMF0 metadata are flattened");
+        check(info.metadata.count("displayWidth") == 0 && info.metadata.count("fps") == 0 &&
+                  info.metadata.count("duration") == 0 && info.metadata.count("keyframes") == 0 &&
+                  info.metadata.count("keyframes.times") == 0,
+              "stale playback and index metadata is filtered");
+
+        flvconcat::ScanResult scan;
+        flvconcat::ScanOptions scan_options;
+        const bool scan_ok = flvconcat::scan_flv(path, scan_options, scan, error);
+        check(scan_ok, "metadata fixture scans successfully: " + error);
+        if (scan_ok) {
+            const auto plan = flvconcat::build_timeline(scan, 0, {});
+            flvconcat::MuxOptions mux_options;
+            mux_options.metadata = info.metadata;
+            mux_options.faststart = false;
+            flvconcat::Mp4Muxer muxer;
+            bool mux_ok = muxer.open(output, info, mux_options, error);
+            if (mux_ok) {
+                mux_ok = muxer.write_file(scan, plan, info, error) && muxer.finish(error);
+            }
+            check(mux_ok, "metadata fixture muxes successfully: " + error);
+            if (mux_ok) {
+                check(file_contains(output, "title") &&
+                          file_contains(output, u8"武隆天生三桥围棋活动") &&
+                          file_contains(output, "artist") &&
+                          file_contains(output, u8"棋手战鹰 (23141761)"),
+                      "MP4 contains canonical title and artist metadata");
+                check(file_contains(output, "RoomId") && file_contains(output, "23141761") &&
+                          file_contains(output, "Recorder.Version"),
+                      "MP4 contains arbitrary recorder metadata");
+                check(file_contains(output, "creation_time") &&
+                          file_contains(output, "2026-08-21T06:31:19.848Z"),
+                      "MP4 contains the canonical UTC creation time");
+                check(file_contains(output, "source_encoder") &&
+                          file_contains(output, "iPhone 15 Pro Max/bilibili/9.7."),
+                      "source encoder metadata is retained separately");
+                check(file_contains(output, "encoded_by") &&
+                          file_contains(output, "FLVConcat 1.1.5"),
+                      "output application metadata identifies FLVConcat");
+                check(!file_contains(output, "displayWidth") && !file_contains(output, "keyframes"),
+                      "MP4 does not contain stale technical FLV metadata");
+            }
+        }
+    }
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+    std::filesystem::remove(output, ignored);
 }
 
 void test_semantic_codec_configuration_compatibility() {
@@ -375,6 +583,7 @@ int main() {
     test_timestamp_match_without_content_match_is_kept();
     test_timestamp_wrap_is_not_a_new_run();
     test_h264_probe();
+    test_metadata_probe_filter_and_mp4_preservation();
     test_semantic_codec_configuration_compatibility();
     test_h265_probe_and_scanner();
     if (failures == 0) {

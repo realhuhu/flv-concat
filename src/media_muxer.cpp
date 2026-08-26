@@ -12,12 +12,20 @@ extern "C" {
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstring>
 #include <fstream>
+#include <initializer_list>
 #include <limits>
 #include <sstream>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+#ifndef FLVCONCAT_VERSION
+#define FLVCONCAT_VERSION "dev"
+#endif
 
 namespace flvconcat {
 namespace {
@@ -55,6 +63,103 @@ bool copy_extradata(AVCodecParameters* parameters,
     std::memcpy(parameters->extradata, configuration.data(), configuration.size());
     parameters->extradata_size = static_cast<int>(configuration.size());
     return true;
+}
+
+std::string normalized_metadata_key(std::string_view key) {
+    std::string normalized;
+    normalized.reserve(key.size());
+    for (const unsigned char byte : key) {
+        if (byte >= 'A' && byte <= 'Z') {
+            normalized.push_back(static_cast<char>(byte - 'A' + 'a'));
+        } else if ((byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9')) {
+            normalized.push_back(static_cast<char>(byte));
+        }
+    }
+    return normalized;
+}
+
+std::string normalized_metadata_leaf(std::string_view key) {
+    const auto separator = key.find_last_of('.');
+    if (separator != std::string_view::npos) {
+        key.remove_prefix(separator + 1);
+    }
+    return normalized_metadata_key(key);
+}
+
+const std::string* find_metadata_value(
+    const MetadataMap& metadata,
+    std::initializer_list<std::string_view> preferred_keys) {
+    for (const auto preferred : preferred_keys) {
+        // Prefer a top-level/exact key over the same name nested inside a
+        // recorder namespace.
+        for (const auto& [key, value] : metadata) {
+            if (!value.empty() && normalized_metadata_key(key) == preferred) {
+                return &value;
+            }
+        }
+        for (const auto& [key, value] : metadata) {
+            if (!value.empty() && normalized_metadata_leaf(key) == preferred) {
+                return &value;
+            }
+        }
+    }
+    return nullptr;
+}
+
+void set_metadata_alias(AVFormatContext* context,
+                        const MetadataMap& metadata,
+                        const char* output_key,
+                        std::initializer_list<std::string_view> preferred_keys) {
+    if (const auto* value = find_metadata_value(metadata, preferred_keys)) {
+        av_dict_set(&context->metadata, output_key, value->c_str(), AV_DICT_DONT_OVERWRITE);
+    }
+}
+
+void apply_output_metadata(AVFormatContext* context, const MetadataMap& metadata) {
+    static const std::unordered_set<std::string> canonical_keys = {
+        "title",       "artist",      "comment",  "description", "copyright",
+        "album",       "albumartist", "composer", "genre",       "date",
+        "creationtime", "language",    "publisher", "performer",   "encoder",
+    };
+
+    // Keep arbitrary recorder and platform fields as MP4 mdta entries. Known
+    // fields are emitted once with canonical names below so players can find
+    // them even if the FLV used different casing.
+    for (const auto& [key, value] : metadata) {
+        const auto normalized = normalized_metadata_key(key);
+        if (key.empty() || value.empty() || canonical_keys.find(normalized) != canonical_keys.end()) {
+            continue;
+        }
+        av_dict_set(&context->metadata, key.c_str(), value.c_str(), AV_DICT_DONT_OVERWRITE);
+    }
+
+    set_metadata_alias(context, metadata, "title", {"title", "streamtitle"});
+    set_metadata_alias(context,
+                       metadata,
+                       "artist",
+                       {"artist", "streamer", "anchor", "author", "creator", "uploader",
+                        "owner", "name"});
+    set_metadata_alias(context, metadata, "comment", {"comment"});
+    set_metadata_alias(context, metadata, "description", {"description", "desc"});
+    set_metadata_alias(context, metadata, "copyright", {"copyright"});
+    set_metadata_alias(context, metadata, "album", {"album"});
+    set_metadata_alias(context, metadata, "album_artist", {"albumartist"});
+    set_metadata_alias(context, metadata, "composer", {"composer"});
+    set_metadata_alias(context, metadata, "genre", {"genre"});
+    set_metadata_alias(context, metadata, "date", {"date"});
+    set_metadata_alias(context,
+                       metadata,
+                       "creation_time",
+                       {"creationtime", "starttime"});
+    set_metadata_alias(context, metadata, "language", {"language"});
+    set_metadata_alias(context, metadata, "publisher", {"publisher"});
+    set_metadata_alias(context, metadata, "performer", {"performer"});
+    set_metadata_alias(context, metadata, "source_encoder", {"encoder"});
+
+    // The MOV muxer writes its own libavformat version to `encoder`. Keep the
+    // application identity separate so neither it nor the source encoder is
+    // silently overwritten during avformat_write_header().
+    av_dict_set(&context->metadata, "encoded_by", "FLVConcat " FLVCONCAT_VERSION, 0);
 }
 
 } // namespace
@@ -121,7 +226,7 @@ public:
             return false;
         }
         audio_stream->time_base = AVRational{1, sample_rate};
-        av_dict_set(&context->metadata, "encoder", "FLVConcat 1.1.4", 0);
+        apply_output_metadata(context, options.metadata);
 
         result = avio_open(&context->pb, output_name.c_str(), AVIO_FLAG_WRITE);
         if (result < 0) {
@@ -131,9 +236,11 @@ public:
         }
 
         AVDictionary* header_options = nullptr;
+        std::string movflags = "+use_metadata_tags";
         if (options.faststart) {
-            av_dict_set(&header_options, "movflags", "+faststart", 0);
+            movflags += "+faststart";
         }
+        av_dict_set(&header_options, "movflags", movflags.c_str(), 0);
         result = avformat_write_header(context, &header_options);
         av_dict_free(&header_options);
         if (result < 0) {

@@ -16,6 +16,7 @@ struct MuxOptions {
     std::int64_t video_offset_us = 0;
     std::int64_t nominal_video_duration_us = 50'000;
     std::int64_t maximum_video_duration_us = 30'000'000;
+    MetadataMap metadata;
     bool faststart = true;
 };
 

@@ -16,6 +16,7 @@ No media is decoded or re-encoded. Processing speed is primarily limited by disk
 - Preserves H.264/H.265 composition time and supports an additional presentation offset.
 - Sorts multiple inputs by filename, with an option to keep command-line order.
 - Expands `*.flv` and `part-?.flv` input filename patterns when the shell passes them through.
+- Preserves descriptive metadata such as title, streamer, comments, recording time, and custom recorder fields.
 - Writes to a temporary output and only moves it into place after successful finalization.
 - Supports drag-and-drop on Windows.
 
@@ -47,6 +48,8 @@ Run \`flvconcat --help\` for every option. A plain integer in \`avoffset.txt\`, 
 ## How it works
 
 FLVConcat performs two passes. The first pass indexes raw FLV media tags, unwraps timestamps, divides streams into runs, and computes lightweight packet fingerprints. It then pairs audio/video runs, removes verified duplicated runs, and plans a continuous output timeline. The second pass reads encoded H.264/H.265/AAC payloads by index, drops resent audio, preserves composition offsets and real recording gaps, and writes MP4 through libavformat. Sequence-header probing is codec-specific and lives under `src/codecs/`, so future formats can be added without changing the timeline pipeline.
+
+Non-playback fields from FLV `onMetaData` are carried into MP4. The first input wins and later inputs only fill missing fields. The source `encoder` becomes `source_encoder`, and `encoded_by` identifies FLVConcat; MP4's `encoder` identifies the FFmpeg/libavformat muxer actually used. Known standard FLV structural fields such as duration, frame rate, dimensions, bitrate, and keyframe indexes are deliberately not copied because the final MP4 must derive them from its own streams and timeline. Vendor-specific diagnostic fields keep their original names but are never treated as MP4 playback parameters.
 
 See [docs/algorithm.md](docs/algorithm.md) for the detailed model.
 

@@ -2,6 +2,20 @@
 
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic versioning.
 
+## [Unreleased]
+
+## [1.1.5] - 2026-08-26
+
+### Added
+
+- Preserve descriptive and custom AMF0 `onMetaData` fields in merged MP4 files,
+  including canonical title, artist, comment, and creation-time aliases.
+
+### Changed
+
+- Recompute structural metadata such as duration, frame rate, dimensions,
+  bitrate, and keyframe indexes instead of copying stale per-FLV values.
+
 ## [1.1.4] - 2026-08-08
 
 ### Changed

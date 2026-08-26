@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
   FLVConcat
-  VERSION 1.1.4
+  VERSION 1.1.5
   DESCRIPTION "Repair broken live-recording FLV timestamps and losslessly merge them into MP4"
   LANGUAGES CXX)
 
@@ -44,6 +44,7 @@ target_include_directories(flvconcat_core
 target_link_libraries(flvconcat_core PUBLIC flvconcat_codecs)
 
 add_library(flvconcat_media
+  src/flv/amf0_metadata.cpp
   src/flv/probe.cpp
   src/media.cpp
   src/media_muxer.cpp)
@@ -52,6 +53,7 @@ if(FLVCONCAT_FFMPEG_AOM_STUB)
 endif()
 target_include_directories(flvconcat_media PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(flvconcat_media PUBLIC flvconcat_core FFMPEG::avformat FFMPEG::avcodec FFMPEG::avutil)
+target_compile_definitions(flvconcat_media PRIVATE FLVCONCAT_VERSION="${PROJECT_VERSION}")
 if(WIN32)
   # Static FFmpeg builds may include Schannel and Media Foundation objects even
   # when FLVConcat only uses local files. Their Windows SDK imports are private

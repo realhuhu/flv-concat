@@ -1,5 +1,6 @@
 #include "flvconcat/flv_probe.hpp"
 
+#include "amf0_metadata.hpp"
 #include "flvconcat/codecs/registry.hpp"
 
 #include <array>
@@ -8,9 +9,13 @@
 #include <fstream>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace flvconcat {
 namespace {
+
+constexpr std::size_t kMetadataProbeTags = 4096;
+constexpr std::uint32_t kMaximumScriptDataSize = 8U * 1024U * 1024U;
 
 std::uint32_t read_be24(const std::uint8_t* data) {
     return (static_cast<std::uint32_t>(data[0]) << 16U) |
@@ -73,7 +78,10 @@ bool probe_flv(const std::filesystem::path& path, MediaInfo& info, std::string& 
     bool got_video = false;
     bool got_audio = false;
     std::string video_error;
-    for (std::size_t tag_index = 0; tag_index < 200'000 && !(got_video && got_audio); ++tag_index) {
+    for (std::size_t tag_index = 0;
+         tag_index < 200'000 &&
+         (!(got_video && got_audio) || tag_index < kMetadataProbeTags);
+         ++tag_index) {
         const auto tag_position = input.tellg();
         if (tag_position < 0 || tag_position + std::streamoff{11} > file_end) {
             break;
@@ -93,7 +101,16 @@ bool probe_flv(const std::filesystem::path& path, MediaInfo& info, std::string& 
             return false;
         }
 
-        if (data_size > 0 && (type == 8 || type == 9) && data_size <= 4U * 1024U * 1024U) {
+        if (type == 18 && data_size > 0 && data_size <= kMaximumScriptDataSize) {
+            std::vector<std::uint8_t> script_data(data_size);
+            input.seekg(static_cast<std::streamoff>(data_position), std::ios::beg);
+            if (!read_exact(input, script_data.data(), script_data.size())) {
+                error = "cannot read FLV ScriptData tag: " + path_text(path);
+                return false;
+            }
+            parse_amf0_script_metadata(script_data.data(), script_data.size(), info.metadata);
+        } else if (data_size > 0 && (type == 8 || type == 9) &&
+                   data_size <= 4U * 1024U * 1024U) {
             std::array<std::uint8_t, 5> media_header{};
             const auto header_size = std::min<std::uint32_t>(
                 data_size, static_cast<std::uint32_t>(media_header.size()));

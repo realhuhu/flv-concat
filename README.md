@@ -18,6 +18,7 @@ FLVConcat 是面向直播、监控和录播文件的 FLV 修复合并工具。�
 - 保留 H.264/H.265 composition time（PTS - DTS）并支持额外音画偏移。
 - 多个 FLV 按文件名排序后快速合并，也可以保留命令行顺序。
 - 支持 `*.flv`、`part-?.flv` 等输入文件名通配符。
+- 保留标题、主播、备注、录制时间及录制器自定义字段等描述性元数据。
 - 输出使用临时文件；全部完成后才替换目标，失败不会留下半成品。
 - Windows 支持把一个或多个 FLV 直接拖到 flvconcat.exe 上。
 
@@ -73,6 +74,8 @@ FLVConcat 使用两遍处理：
 2. 按时间范围配对音视频 run，识别重复 run，规划连续输出时间轴。
 3. 第二遍按索引读取 H.264/H.265/AAC 包，过滤音频重发，保留原始 composition time 和真实空隙。
 4. 通过 libavformat 写入 MP4，全程不重新编码。
+
+FLV `onMetaData` 中不参与播放的字段会写入 MP4，例如标题、主播、备注、房间号、分区、录制器和开始时间。多文件合并时以第一个文件的值为准，后续文件只补充缺失字段。原始 `encoder` 保存为 `source_encoder`，`encoded_by` 标识 FLVConcat；MP4 的 `encoder` 由实际封装所用的 FFmpeg/libavformat 标识。已知的 FLV 标准结构字段（时长、帧率、宽高、码率和关键帧索引等）不会照搬，避免把旧 FLV 的局部值或过期索引带入合并文件；这些值由 MP4 封装器根据最终输出重新生成。厂商自定义诊断字段仍保持原名，但不会被当作 MP4 播放参数。
 
 详细设计见 [docs/algorithm.md](docs/algorithm.md)。
 
